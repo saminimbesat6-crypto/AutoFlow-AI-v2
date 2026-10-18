@@ -90,8 +90,24 @@ export class HttpRequestNode extends BaseNode {
       displayName: 'Timeout (ms)',
       type: 'number',
       default: 30000
+    },
+    {
+      name: 'allowPrivateNetwork',
+      displayName: 'Allow Private Network / Localhost',
+      type: 'boolean',
+      default: false,
+      description: 'Allow requests to private internal subnets and localhost (defaults to false for SSRF defense)'
     }
   ];
+
+  static isPrivateIp(hostname: string): boolean {
+    const host = hostname.toLowerCase().trim();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
+    if (host === '169.254.169.254') return true; // Cloud instance metadata
+    if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
+    return false;
+  }
 
   async execute(context: NodeExecutionContext): Promise<NodeOutput> {
     const items = context.inputData && context.inputData.length > 0
@@ -107,9 +123,25 @@ export class HttpRequestNode extends BaseNode {
       const bodyContentType = context.getNodeParameter('bodyContentType', i, 'json');
       const timeoutMs = context.getNodeParameter('timeout', i, 30000);
       const authType = context.getNodeParameter('authentication', i, 'none');
+      const allowPrivate = context.getNodeParameter('allowPrivateNetwork', i, process.env.NODE_ENV !== 'production');
 
       if (!rawUrl) {
         throw new Error('HTTP Request node requires a URL.');
+      }
+
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(rawUrl);
+      } catch {
+        throw new Error(`Invalid URL format: "${rawUrl}"`);
+      }
+
+      if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+        throw new Error(`Security violation: Only HTTP and HTTPS protocols are permitted, got "${parsedUrl.protocol}"`);
+      }
+
+      if (!allowPrivate && HttpRequestNode.isPrivateIp(parsedUrl.hostname)) {
+        throw new Error(`Security violation: Request to internal/private network destination "${parsedUrl.hostname}" is blocked by SSRF defense.`);
       }
 
       const headers: Record<string, string> = {};

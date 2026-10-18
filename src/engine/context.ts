@@ -1,5 +1,6 @@
 import { DataItem, NodeOutput, WorkflowNode } from '../types/workflow';
 import { CredentialsManager } from '../credentials/manager';
+import { ExpressionSandbox } from './sandbox';
 
 export interface NodeExecutionContext {
   node: WorkflowNode;
@@ -15,6 +16,10 @@ export class ExecutionContext {
   private nodeOutputs: Map<string, NodeOutput> = new Map();
   private credentialsManager: CredentialsManager;
   private workflowEnv: Record<string, string>;
+  public workflowId?: string;
+  public workflowName?: string;
+  public executionId?: string;
+  public executionMode?: string;
 
   constructor(credentialsManager?: CredentialsManager, env?: Record<string, string>) {
     this.credentialsManager = credentialsManager || new CredentialsManager();
@@ -35,6 +40,10 @@ export class ExecutionContext {
       return out[0];
     }
     return null;
+  }
+
+  getAllOutputs(): Map<string, NodeOutput> {
+    return this.nodeOutputs;
   }
 
   createNodeContext(
@@ -84,66 +93,18 @@ export class ExecutionContext {
   ): any {
     if (typeof expr !== 'string') return expr;
 
-    // Check if the whole string is an expression: {{ ... }}
-    const singleMatch = expr.match(/^\s*\{\{\s*([\s\S]+?)\s*\}\}\s*$/);
-    if (singleMatch) {
-      return this.evalCode(singleMatch[1], currentItems, itemIndex, context);
-    }
+    const currentItem = currentItems[itemIndex] || currentItems[0] || { json: {} };
 
-    // Replace embedded expressions: "Hello {{ $json.name }}, how are you?"
-    return expr.replace(/\{\{\s*([\s\S]+?)\s*\}\}/g, (_, code) => {
-      const res = this.evalCode(code, currentItems, itemIndex, context);
-      return res !== undefined && res !== null ? String(res) : '';
+    return ExpressionSandbox.interpolate(expr, {
+      itemData: currentItem,
+      itemIndex,
+      allInputData: currentItems,
+      nodeOutputs: this.nodeOutputs,
+      workflowId: this.workflowId,
+      workflowName: this.workflowName,
+      executionId: this.executionId,
+      executionMode: this.executionMode,
+      env: this.workflowEnv
     });
-  }
-
-  private evalCode(
-    code: string,
-    currentItems: DataItem[],
-    itemIndex: number,
-    context: ExecutionContext
-  ): any {
-    const currentItem = currentItems[itemIndex] || { json: {} };
-    const $json = currentItem.json;
-    const $itemIndex = itemIndex;
-    const $now = new Date().toISOString();
-    const $today = new Date().toISOString().split('T')[0];
-    const $env = this.workflowEnv;
-
-    const nodeLookup = (name: string) => {
-      const out = context.getNodeMainData(name);
-      return {
-        json: out && out.length > 0 ? out[0].json : {},
-        all: () => out || []
-      };
-    };
-
-    const $node = new Proxy(nodeLookup, {
-      get(target, prop: string | symbol) {
-        if (typeof prop === 'string') {
-          return nodeLookup(prop);
-        }
-        return undefined;
-      },
-      apply(target, thisArg, argArray) {
-        return nodeLookup(argArray[0]);
-      }
-    });
-
-    // Unescape \" if code was extracted from inside a JSON string
-    const cleanCode = code.replace(/\\"/g, '"').replace(/\\'/g, "'");
-
-    try {
-      const fn = new Function('$json', '$itemIndex', '$now', '$today', '$env', '$node', `
-        try {
-          return (${cleanCode});
-        } catch (e) {
-          return undefined;
-        }
-      `);
-      return fn($json, $itemIndex, $now, $today, $env, $node);
-    } catch {
-      return undefined;
-    }
   }
 }

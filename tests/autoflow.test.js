@@ -13,6 +13,7 @@ const { WorkflowExecutor } = require('../dist/engine/executor');
 const { WorkflowAdapter } = require('../dist/engine/adapter');
 const { WorkflowRepository } = require('../dist/database/repositories/workflow-repository');
 const { NodeRegistry } = require('../dist/nodes/registry');
+const { ExpressionSandbox } = require('../dist/engine/sandbox');
 
 describe('AutoFlow AI Core Test Suite', () => {
   let db;
@@ -613,5 +614,259 @@ describe('AutoFlow AI Core Test Suite', () => {
     assert.ok(stripe && stripe.outputData[0][0].json.success);
     assert.strictEqual(stripe.outputData[0][0].json.email, 'test-customer@example.com');
   });
+
+  test('12. Switch Node: Multi-rule branching and fallback routing', async () => {
+    const executor = new WorkflowExecutor(db);
+
+    const switchWf = {
+      id: 'wf-switch-test',
+      name: 'Switch Multi-Rule Routing',
+      nodes: [
+        { id: 'start', name: 'Start', type: 'manual-trigger', position: { x: 0, y: 0 }, parameters: {} },
+        {
+          id: 'sw_node',
+          name: 'Route by Role',
+          type: 'switch',
+          position: { x: 200, y: 0 },
+          parameters: {
+            mode: 'rules',
+            rules: [
+              { field: '{{ $json.role }}', operation: 'equals', value: 'admin', outputIndex: 0 },
+              { field: '{{ $json.role }}', operation: 'equals', value: 'manager', outputIndex: 1 }
+            ],
+            fallbackOutput: 3
+          }
+        }
+      ],
+      connections: [
+        { source: 'Start', sourceOutput: 0, target: 'Route by Role', targetInput: 0 }
+      ],
+      settings: {},
+      active: false,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    const initialData = [
+      { json: { name: 'Alice', role: 'admin' } },
+      { json: { name: 'Bob', role: 'manager' } },
+      { json: { name: 'Charlie', role: 'guest' } }
+    ];
+
+    const res = await executor.execute(switchWf, { mode: 'manual', initialData });
+    assert.strictEqual(res.status, 'success');
+
+    const details = executor.getExecution(res.id);
+    const swResult = details.nodes.find((n) => n.nodeId === 'sw_node');
+    assert.ok(swResult);
+
+    // Output 0 should have Alice (admin)
+    assert.strictEqual(swResult.outputData[0].length, 1);
+    assert.strictEqual(swResult.outputData[0][0].json.name, 'Alice');
+
+    // Output 1 should have Bob (manager)
+    assert.strictEqual(swResult.outputData[1].length, 1);
+    assert.strictEqual(swResult.outputData[1][0].json.name, 'Bob');
+
+    // Output 3 (fallback) should have Charlie (guest)
+    assert.strictEqual(swResult.outputData[3].length, 1);
+    assert.strictEqual(swResult.outputData[3][0].json.name, 'Charlie');
+  });
+
+  test('13. Loop Node: Micro-batch iteration across items', async () => {
+    const executor = new WorkflowExecutor(db);
+
+    const loopWf = {
+      id: 'wf-loop-test',
+      name: 'Loop Over Items Test',
+      nodes: [
+        { id: 'start', name: 'Start', type: 'manual-trigger', position: { x: 0, y: 0 }, parameters: {} },
+        {
+          id: 'loop_node',
+          name: 'Batch Loop',
+          type: 'loop',
+          position: { x: 200, y: 0 },
+          parameters: { batchSize: 2 }
+        }
+      ],
+      connections: [
+        { source: 'Start', sourceOutput: 0, target: 'Batch Loop', targetInput: 0 }
+      ],
+      settings: {},
+      active: false,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    const items = [
+      { json: { id: 1 } },
+      { json: { id: 2 } },
+      { json: { id: 3 } }
+    ];
+
+    const res = await executor.execute(loopWf, { mode: 'manual', initialData: items });
+    assert.strictEqual(res.status, 'success');
+
+    const details = executor.getExecution(res.id);
+    const loopResult = details.nodes.find((n) => n.nodeId === 'loop_node');
+    assert.ok(loopResult);
+
+    // Initial batch of 2 items routed to loop output (port 0)
+    assert.strictEqual(loopResult.outputData[0].length, 2);
+    assert.strictEqual(loopResult.outputData[0][0].json.id, 1);
+    assert.strictEqual(loopResult.outputData[0][1].json.id, 2);
+  });
+
+  test('14. Wait Node: Time delay and webhook resume state', async () => {
+    const executor = new WorkflowExecutor(db);
+
+    const waitWf = {
+      id: 'wf-wait-test',
+      name: 'Wait Operations Test',
+      nodes: [
+        { id: 'start', name: 'Start', type: 'manual-trigger', position: { x: 0, y: 0 }, parameters: {} },
+        {
+          id: 'wait_node',
+          name: 'Wait Webhook',
+          type: 'wait',
+          position: { x: 200, y: 0 },
+          parameters: { resumeMode: 'webhook' }
+        }
+      ],
+      connections: [
+        { source: 'Start', sourceOutput: 0, target: 'Wait Webhook', targetInput: 0 }
+      ],
+      settings: {},
+      active: false,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    const res = await executor.execute(waitWf, { mode: 'manual', initialData: [{ json: { task: 'pause' } }] });
+    assert.strictEqual(res.status, 'success');
+
+    const details = executor.getExecution(res.id);
+    const waitResult = details.nodes.find((n) => n.nodeId === 'wait_node');
+    assert.ok(waitResult);
+    assert.ok(waitResult.outputData[0][0].json.resumeToken.startsWith('res_'));
+    assert.ok(waitResult.outputData[0][0].json.resumeUrl.includes('/webhook/resume/'));
+  });
+
+  test('15. Binary File Operations: Read, write, and parse CSV data', async () => {
+    const executor = new WorkflowExecutor(db);
+    const tmpFilePath = path.join(__dirname, 'test-sample.csv');
+    fs.writeFileSync(tmpFilePath, 'id,name,role\n1,Alice,Admin\n2,Bob,Developer\n');
+
+    try {
+      const fileWf = {
+        id: 'wf-file-test',
+        name: 'File Operations Pipeline',
+        nodes: [
+          { id: 'start', name: 'Start', type: 'manual-trigger', position: { x: 0, y: 0 }, parameters: {} },
+          {
+            id: 'file_read',
+            name: 'Read CSV File',
+            type: 'read-write-file',
+            position: { x: 200, y: 0 },
+            parameters: { operation: 'read', filePath: tmpFilePath }
+          },
+          {
+            id: 'file_extract',
+            name: 'Extract Rows',
+            type: 'extract-from-file',
+            position: { x: 400, y: 0 },
+            parameters: { fileFormat: 'csv', headerRow: true }
+          }
+        ],
+        connections: [
+          { source: 'Start', sourceOutput: 0, target: 'Read CSV File', targetInput: 0 },
+          { source: 'Read CSV File', sourceOutput: 0, target: 'Extract Rows', targetInput: 0 }
+        ],
+        settings: {},
+        active: false,
+        createdAt: '',
+        updatedAt: ''
+      };
+
+      const res = await executor.execute(fileWf, { mode: 'manual' });
+      assert.strictEqual(res.status, 'success');
+
+      const details = executor.getExecution(res.id);
+      const extractResult = details.nodes.find((n) => n.nodeId === 'file_extract');
+      assert.ok(extractResult);
+      assert.strictEqual(extractResult.outputData[0].length, 2);
+      assert.strictEqual(extractResult.outputData[0][0].json.name, 'Alice');
+      assert.strictEqual(extractResult.outputData[0][1].json.name, 'Bob');
+    } finally {
+      if (fs.existsSync(tmpFilePath)) fs.unlinkSync(tmpFilePath);
+    }
+  });
+
+  test('16. Error Handling: onError continueErrorOutput routes failure to port 1 without halting workflow', async () => {
+    const executor = new WorkflowExecutor(db);
+
+    const errorRoutingWf = {
+      id: 'wf-error-routing-test',
+      name: 'Error Output Routing Test',
+      nodes: [
+        { id: 'start', name: 'Start', type: 'manual-trigger', position: { x: 0, y: 0 }, parameters: {} },
+        {
+          id: 'bad_node',
+          name: 'Failing Node',
+          type: 'http-request',
+          position: { x: 200, y: 0 },
+          parameters: { url: '' }, // Missing URL triggers intentional error
+          onError: 'continueErrorOutput'
+        },
+        {
+          id: 'error_handler',
+          name: 'Handle Error Output',
+          type: 'set-data',
+          position: { x: 400, y: 0 },
+          parameters: {
+            mode: 'rawJson',
+            jsonData: '{\n  "recovered": true,\n  "caughtError": "{{ $json.error }}"\n}'
+          }
+        }
+      ],
+      connections: [
+        { source: 'Start', sourceOutput: 0, target: 'Failing Node', targetInput: 0 },
+        { source: 'Failing Node', sourceOutput: 1, target: 'Handle Error Output', targetInput: 0 }
+      ],
+      settings: {},
+      active: false,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    const res = await executor.execute(errorRoutingWf, { mode: 'manual' });
+    // Workflow should SUCCEED overall because error was caught and routed down error port
+    assert.strictEqual(res.status, 'success', `Expected success, got: ${res.errorMessage}`);
+
+    const details = executor.getExecution(res.id);
+    const handlerNode = details.nodes.find((n) => n.nodeId === 'error_handler');
+    assert.ok(handlerNode && handlerNode.outputData[0][0].json.recovered);
+    assert.ok(handlerNode.outputData[0][0].json.caughtError.includes('requires a URL'));
+  });
+
+  test('17. Expression Sandbox: Evaluates expressions safely and rejects access to process or fs', () => {
+    // 1. Valid expressions
+    const resultMath = ExpressionSandbox.evaluate('Math.max(10, 42)');
+    assert.strictEqual(resultMath, 42);
+
+    const resultInterpolate = ExpressionSandbox.interpolate('Hello {{ $json.user }}!', {
+      itemData: { json: { user: 'World' } }
+    });
+    assert.strictEqual(resultInterpolate, 'Hello World!');
+
+    // 2. Security: process and require are undefined
+    assert.throws(() => {
+      ExpressionSandbox.evaluate('process.exit(1)');
+    });
+    assert.throws(() => {
+      ExpressionSandbox.evaluate('require("fs")');
+    });
+  });
 });
+
 

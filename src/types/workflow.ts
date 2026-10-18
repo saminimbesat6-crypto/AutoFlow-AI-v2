@@ -23,6 +23,8 @@ export interface NodePosition {
   y: number;
 }
 
+export type NodeOnError = 'stopWorkflow' | 'continueRegularOutput' | 'continueErrorOutput';
+
 export interface WorkflowNode {
   id: string;
   name: string;
@@ -33,9 +35,11 @@ export interface WorkflowNode {
   disabled?: boolean;
   notes?: string;
   continueOnFail?: boolean;
+  onError?: NodeOnError;
   retryOnFail?: boolean;
   maxTries?: number;
   waitBetweenTries?: number;
+  pinnedData?: DataItem[];
 }
 
 export interface Connection {
@@ -66,21 +70,24 @@ export interface Workflow {
   updatedAt: string;
 }
 
+export interface BinaryData {
+  data: string; // base64
+  mimeType: string;
+  fileName?: string;
+  fileExtension?: string;
+  fileSize?: number;
+}
+
 export interface DataItem {
   json: Record<string, any>;
-  binary?: Record<string, {
-    data: string; // base64
-    mimeType: string;
-    fileName?: string;
-    fileSize?: number;
-  }>;
-  pairedItem?: number;
+  binary?: Record<string, BinaryData>;
+  pairedItem?: number | { item: number };
 }
 
 export type NodeOutput = DataItem[][]; // array of outputs (for branching: output[0] = true branch, output[1] = false branch)
 
-export type ExecutionMode = 'manual' | 'webhook' | 'schedule' | 'test';
-export type ExecutionStatus = 'pending' | 'running' | 'success' | 'error' | 'cancelled';
+export type ExecutionMode = 'manual' | 'webhook' | 'schedule' | 'test' | 'error' | 'subworkflow';
+export type ExecutionStatus = 'pending' | 'running' | 'success' | 'error' | 'waiting' | 'cancelled';
 
 export interface ExecutionRecord {
   id: string;
@@ -101,7 +108,7 @@ export interface NodeExecutionRecord {
   nodeId: string;
   nodeName: string;
   nodeType: string;
-  status: 'waiting' | 'running' | 'success' | 'error';
+  status: 'waiting' | 'running' | 'success' | 'error' | 'skipped';
   inputData?: DataItem[];
   outputData?: NodeOutput;
   error?: string;

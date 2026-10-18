@@ -28,11 +28,25 @@ export class WorkflowExecutor {
   private db: DatabaseSync;
   private nodeRegistry: NodeRegistry;
   private credentialsManager: CredentialsManager;
+  private cancelledExecutions: Set<string> = new Set();
 
   constructor(db?: DatabaseSync) {
     this.db = db || getDatabase();
     this.nodeRegistry = NodeRegistry.getInstance();
     this.credentialsManager = new CredentialsManager(this.db);
+  }
+
+  cancelExecution(executionId: string): boolean {
+    this.cancelledExecutions.add(executionId);
+    try {
+      this.db.prepare("UPDATE executions SET status = 'cancelled', finished_at = ? WHERE id = ?").run(
+        new Date().toISOString(),
+        executionId
+      );
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async execute(workflow: Workflow, options: ExecuteOptions = {}): Promise<ExecutionRecord> {
@@ -68,6 +82,11 @@ export class WorkflowExecutor {
     }
 
     const context = new ExecutionContext(this.credentialsManager);
+    context.workflowId = workflow.id;
+    context.workflowName = workflow.name;
+    context.executionId = executionId;
+    context.executionMode = mode;
+
     const nodeRecords: NodeExecutionRecord[] = [];
     const executedNodeIds = new Set<string>();
     const nodeInputsMap = new Map<string, DataItem[]>();
@@ -94,24 +113,46 @@ export class WorkflowExecutor {
       }
     }
 
-    let overallStatus: 'success' | 'error' = 'success';
+    let overallStatus: 'success' | 'error' | 'waiting' | 'cancelled' = 'success';
     let fatalError: string | undefined = undefined;
 
-    // Execute in topological order
-    for (const nodeId of validation.executionOrder) {
+    // Execution queue supporting dynamic topological flow & loop iterations
+    const executionQueue: string[] = [...validation.executionOrder];
+    const nodeRunCounts = new Map<string, number>();
+
+    while (executionQueue.length > 0) {
+      if (this.cancelledExecutions.has(executionId)) {
+        overallStatus = 'cancelled';
+        fatalError = 'Execution was cancelled by user request.';
+        break;
+      }
+
+      const nodeId = executionQueue.shift()!;
       const node = graph.getNode(nodeId);
       if (!node || node.disabled) continue;
 
-      // Check if this node has input data ready (from start or from predecessor output)
-      const inputItems = nodeInputsMap.get(node.id);
-
-      // If not a start node and received no input items, skip this node (branch was not taken)
-      const isStartNode = startNodes.some((s) => s.id === node.id);
-      if (!isStartNode && inputItems === undefined) {
-        continue;
+      // Check max run count to prevent runaway infinite cycles
+      const runCount = (nodeRunCounts.get(node.id) || 0) + 1;
+      nodeRunCounts.set(node.id, runCount);
+      if (runCount > 500) {
+        overallStatus = 'error';
+        fatalError = `Execution limit exceeded: Node "${node.name}" reached 500 loop iterations.`;
+        break;
       }
 
-      const currentInput = inputItems || [];
+      // Check if this node has input data ready (or pinned data)
+      const inputItems = nodeInputsMap.get(node.id);
+      const isStartNode = startNodes.some((s) => s.id === node.id);
+
+      if (!isStartNode && inputItems === undefined && (!node.pinnedData || node.pinnedData.length === 0)) {
+        continue; // Branch was not taken
+      }
+
+      // Priority: Pinned Data > Incoming Data > Empty array
+      const currentInput = (node.pinnedData && node.pinnedData.length > 0)
+        ? node.pinnedData
+        : (inputItems || []);
+
       const nodeRecordId = uuidv4();
       const nodeStartedAt = new Date().toISOString();
       const nodeStartMs = Date.now();
@@ -139,13 +180,12 @@ export class WorkflowExecutor {
           duration: Date.now() - nodeStartMs
         };
         nodeRecords.push(nodeRecord);
+
         if (options.onNodeFinish) {
-          try {
-            await options.onNodeFinish(nodeRecord);
-          } catch (e) {}
+          try { await options.onNodeFinish(nodeRecord); } catch (e) {}
         }
 
-        if (!node.continueOnFail) {
+        if (node.onError !== 'continueRegularOutput' && !node.continueOnFail) {
           overallStatus = 'error';
           fatalError = errMsg;
           break;
@@ -177,27 +217,123 @@ export class WorkflowExecutor {
       const nodeFinishedAt = new Date().toISOString();
 
       if (nodeError) {
-        const nodeRecord: NodeExecutionRecord = {
-          id: nodeRecordId,
-          executionId,
-          nodeId: node.id,
-          nodeName: node.name,
-          nodeType: node.type,
-          status: 'error',
-          inputData: currentInput,
-          error: nodeError,
-          startedAt: nodeStartedAt,
-          finishedAt: nodeFinishedAt,
-          duration: nodeDuration
-        };
-        nodeRecords.push(nodeRecord);
-        if (options.onNodeFinish) {
-          try {
-            await options.onNodeFinish(nodeRecord);
-          } catch (e) {}
-        }
+        // Evaluate onError policy
+        const onErrorPolicy = node.onError || (node.continueOnFail ? 'continueRegularOutput' : 'stopWorkflow');
 
-        if (!node.continueOnFail) {
+        if (onErrorPolicy === 'continueErrorOutput') {
+          // Route error item exclusively through Port 1 (Error Handle)
+          const errorItem: DataItem = {
+            json: {
+              error: nodeError,
+              message: nodeError,
+              nodeName: node.name,
+              nodeId: node.id,
+              timestamp: nodeFinishedAt
+            }
+          };
+
+          output = [[], [errorItem]];
+          context.setNodeOutput(node.name, output);
+          context.setNodeOutput(node.id, output);
+
+          const nodeRecord: NodeExecutionRecord = {
+            id: nodeRecordId,
+            executionId,
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.type,
+            status: 'error',
+            inputData: currentInput,
+            outputData: output,
+            error: nodeError,
+            startedAt: nodeStartedAt,
+            finishedAt: nodeFinishedAt,
+            duration: nodeDuration
+          };
+          nodeRecords.push(nodeRecord);
+
+          if (options.onNodeFinish) {
+            try { await options.onNodeFinish(nodeRecord); } catch (e) {}
+          }
+          executedNodeIds.add(node.id);
+
+          // Forward error item to connections from Port 1
+          const edges = graph.getSuccessors(node.id);
+          for (const edge of edges) {
+            if (edge.sourceOutput === 1) {
+              const existing = nodeInputsMap.get(edge.target) || [];
+              nodeInputsMap.set(edge.target, [...existing, errorItem]);
+              if (!executionQueue.includes(edge.target)) {
+                executionQueue.push(edge.target);
+              }
+            }
+          }
+          continue;
+        } else if (onErrorPolicy === 'continueRegularOutput') {
+          const fallbackItem: DataItem = {
+            json: {
+              error: nodeError,
+              status: 'FAILED_CONTINUED',
+              node: node.name
+            }
+          };
+          output = [[fallbackItem]];
+          context.setNodeOutput(node.name, output);
+          context.setNodeOutput(node.id, output);
+
+          const nodeRecord: NodeExecutionRecord = {
+            id: nodeRecordId,
+            executionId,
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.type,
+            status: 'error',
+            inputData: currentInput,
+            outputData: output,
+            error: nodeError,
+            startedAt: nodeStartedAt,
+            finishedAt: nodeFinishedAt,
+            duration: nodeDuration
+          };
+          nodeRecords.push(nodeRecord);
+
+          if (options.onNodeFinish) {
+            try { await options.onNodeFinish(nodeRecord); } catch (e) {}
+          }
+          executedNodeIds.add(node.id);
+
+          const edges = graph.getSuccessors(node.id);
+          for (const edge of edges) {
+            if (edge.sourceOutput === 0) {
+              const existing = nodeInputsMap.get(edge.target) || [];
+              nodeInputsMap.set(edge.target, [...existing, fallbackItem]);
+              if (!executionQueue.includes(edge.target)) {
+                executionQueue.push(edge.target);
+              }
+            }
+          }
+          continue;
+        } else {
+          // stopWorkflow
+          const nodeRecord: NodeExecutionRecord = {
+            id: nodeRecordId,
+            executionId,
+            nodeId: node.id,
+            nodeName: node.name,
+            nodeType: node.type,
+            status: 'error',
+            inputData: currentInput,
+            error: nodeError,
+            startedAt: nodeStartedAt,
+            finishedAt: nodeFinishedAt,
+            duration: nodeDuration
+          };
+          nodeRecords.push(nodeRecord);
+
+          if (options.onNodeFinish) {
+            try { await options.onNodeFinish(nodeRecord); } catch (e) {}
+          }
+
           overallStatus = 'error';
           fatalError = `Node "${node.name}" failed: ${nodeError}`;
           break;
@@ -220,10 +356,9 @@ export class WorkflowExecutor {
           duration: nodeDuration
         };
         nodeRecords.push(nodeRecord);
+
         if (options.onNodeFinish) {
-          try {
-            await options.onNodeFinish(nodeRecord);
-          } catch (e) {}
+          try { await options.onNodeFinish(nodeRecord); } catch (e) {}
         }
         executedNodeIds.add(node.id);
 
@@ -236,6 +371,11 @@ export class WorkflowExecutor {
           if (outputDataForPort.length > 0) {
             const existing = nodeInputsMap.get(edge.target) || [];
             nodeInputsMap.set(edge.target, [...existing, ...outputDataForPort]);
+
+            // If target node is not already in queue, queue it for execution
+            if (!executionQueue.includes(edge.target)) {
+              executionQueue.push(edge.target);
+            }
           }
         }
       }
@@ -271,7 +411,41 @@ export class WorkflowExecutor {
       this.saveExecutionRecord(record, nodeRecords);
     }
 
+    // Trigger Global Error Workflow if configured and execution crashed
+    if (overallStatus === 'error' && workflow.settings?.errorWorkflow) {
+      this.triggerErrorWorkflow(workflow.settings.errorWorkflow, {
+        execution: { id: executionId, mode, duration },
+        workflow: { id: workflow.id, name: workflow.name },
+        error: { message: fatalError }
+      }).catch(() => {});
+    }
+
     return record;
+  }
+
+  private async triggerErrorWorkflow(errorWorkflowId: string, errorPayload: any): Promise<void> {
+    const row = this.db.prepare('SELECT * FROM workflows WHERE id = ?').get(errorWorkflowId) as any;
+    if (!row) return;
+
+    try {
+      const errWf: Workflow = {
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        nodes: JSON.parse(row.nodes || '[]'),
+        connections: JSON.parse(row.connections || '[]'),
+        settings: JSON.parse(row.settings || '{}'),
+        active: Boolean(row.active),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at
+      };
+
+      await this.execute(errWf, {
+        mode: 'error',
+        initialData: [{ json: errorPayload }],
+        saveExecution: true
+      });
+    } catch {}
   }
 
   private saveExecutionRecord(exec: ExecutionRecord, nodes: NodeExecutionRecord[]): void {

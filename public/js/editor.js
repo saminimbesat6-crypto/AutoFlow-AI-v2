@@ -136,7 +136,12 @@ class WorkflowEditor {
       position: { x: Math.round(canvasPos.x), y: Math.round(canvasPos.y) },
       parameters: defaultParams,
       credentials: {},
-      disabled: false
+      disabled: false,
+      onError: 'stopWorkflow',
+      retryOnFail: false,
+      maxTries: 3,
+      waitBetweenTries: 1000,
+      notes: ''
     };
 
     this.canvas.workflow.nodes.push(newNode);
@@ -149,8 +154,44 @@ class WorkflowEditor {
     const nodeDef = this.nodeTypes.find((nt) => nt.type === node.type);
     this.drawerTitle.textContent = `${nodeDef?.name || node.type} Settings`;
 
-    this.drawerForm.innerHTML = '';
+    this.drawerForm.innerHTML = `
+      <div class="drawer-tabs">
+        <button type="button" class="drawer-tab active" data-tab="params">⚙️ Parameters</button>
+        <button type="button" class="drawer-tab" data-tab="settings">🛡️ Settings & Error</button>
+      </div>
+      <div class="drawer-tab-content active" id="tab-content-params"></div>
+      <div class="drawer-tab-content" id="tab-content-settings"></div>
+    `;
 
+    // Tab switching logic
+    const tabs = this.drawerForm.querySelectorAll('.drawer-tab');
+    const tabParams = this.drawerForm.querySelector('#tab-content-params');
+    const tabSettings = this.drawerForm.querySelector('#tab-content-settings');
+
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        tabs.forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        if (tab.dataset.tab === 'params') {
+          tabParams.classList.add('active');
+          tabSettings.classList.remove('active');
+        } else {
+          tabParams.classList.remove('active');
+          tabSettings.classList.add('active');
+        }
+      });
+    });
+
+    // Populate Tab 1: Parameters
+    this.renderParametersTab(tabParams, node, nodeDef);
+
+    // Populate Tab 2: Settings & Error Handling
+    this.renderSettingsTab(tabSettings, node);
+
+    this.nodeDrawer.classList.add('open');
+  }
+
+  renderParametersTab(container, node, nodeDef) {
     // Node Display Name Field
     const nameGroup = document.createElement('div');
     nameGroup.className = 'form-group';
@@ -172,7 +213,45 @@ class WorkflowEditor {
 
       this.canvas.render();
     });
-    this.drawerForm.appendChild(nameGroup);
+    container.appendChild(nameGroup);
+
+    // Expression Assistant Box
+    const helperBox = document.createElement('div');
+    helperBox.className = 'expression-helper-box';
+    helperBox.innerHTML = `
+      <div style="font-weight: 600; color: #a78bfa; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+        <span>⚡ Expressions Helper</span>
+        <span style="font-size: 0.7rem; color: #64748b;">Click chip to copy</span>
+      </div>
+      <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 6px;">
+        Use <code>{{ ... }}</code> in any field to inject live data:
+      </div>
+      <div class="expression-chips">
+        <span class="expression-chip" data-expr="{{ $json.data }}">{{ $json.data }}</span>
+        <span class="expression-chip" data-expr="{{ $('Node').item.json }}">{{ $('Node').item.json }}</span>
+        <span class="expression-chip" data-expr="{{ $itemIndex }}">{{ $itemIndex }}</span>
+        <span class="expression-chip" data-expr="{{ $now }}">{{ $now }}</span>
+        <span class="expression-chip" data-expr="{{ $execution.id }}">{{ $execution.id }}</span>
+      </div>
+    `;
+    helperBox.querySelectorAll('.expression-chip').forEach((chip) => {
+      chip.addEventListener('click', () => {
+        const expr = chip.dataset.expr;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(expr);
+        }
+        const originalText = chip.textContent;
+        chip.textContent = '✓ Copied!';
+        chip.style.borderColor = '#22c55e';
+        chip.style.color = '#86efac';
+        setTimeout(() => {
+          chip.textContent = originalText;
+          chip.style.borderColor = '';
+          chip.style.color = '';
+        }, 1200);
+      });
+    });
+    container.appendChild(helperBox);
 
     // Render properties defined in node schema
     if (nodeDef && nodeDef.properties) {
@@ -246,9 +325,114 @@ class WorkflowEditor {
           });
         }
 
-        this.drawerForm.appendChild(group);
+        container.appendChild(group);
       }
     }
+  }
+
+  renderSettingsTab(container, node) {
+    const currentOnError = node.onError || (node.continueOnFail ? 'continueRegularOutput' : 'stopWorkflow');
+    const isRetry = Boolean(node.retryOnFail);
+    const maxTries = node.maxTries || 3;
+    const waitMs = node.waitBetweenTries || 1000;
+    const isDisabled = Boolean(node.disabled);
+    const notes = node.notes || '';
+
+    container.innerHTML = `
+      <div class="form-group">
+        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+          <span>On Error Action</span>
+          <span style="font-size: 0.72rem; color: #a855f7;">Error Routing</span>
+        </label>
+        <select class="form-control" id="setting-on-error">
+          <option value="stopWorkflow" ${currentOnError === 'stopWorkflow' ? 'selected' : ''}>Stop Workflow (Default)</option>
+          <option value="continueRegularOutput" ${currentOnError === 'continueRegularOutput' ? 'selected' : ''}>Continue Regular Output</option>
+          <option value="continueErrorOutput" ${currentOnError === 'continueErrorOutput' ? 'selected' : ''}>Continue Error Output (Port 1 🔴)</option>
+        </select>
+        <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 5px; line-height: 1.4;">
+          • <b>Stop Workflow</b>: Halts execution immediately upon error.<br/>
+          • <b>Continue Regular Output</b>: Bypasses error and flows items along output 0.<br/>
+          • <b>Continue Error Output</b>: Emits error object onto dedicated red Port 1.
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top: 16px;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="setting-retry-on-fail" ${isRetry ? 'checked' : ''} style="width: 16px; height: 16px; accent-color: var(--accent-purple);" />
+          <span>Retry on Failure</span>
+        </label>
+        <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 2px;">
+          Automatically retry node execution before throwing an error.
+        </div>
+      </div>
+
+      <div id="retry-options-panel" style="${isRetry ? 'display: block;' : 'display: none;'} margin-left: 8px; padding-left: 12px; border-left: 2px solid var(--accent-purple); margin-bottom: 16px;">
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label class="form-label" style="font-size: 0.78rem;">Max Tries</label>
+          <input type="number" class="form-control" id="setting-max-tries" min="1" max="10" value="${maxTries}" />
+        </div>
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label class="form-label" style="font-size: 0.78rem;">Wait Between Tries (ms)</label>
+          <input type="number" class="form-control" id="setting-wait-between-tries" min="0" step="500" value="${waitMs}" />
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top: 16px;">
+        <label class="form-label" style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="checkbox" id="setting-disabled" ${isDisabled ? 'checked' : ''} style="width: 16px; height: 16px; accent-color: var(--accent-purple);" />
+          <span>Disable Node</span>
+        </label>
+        <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 2px;">
+          When disabled, this node is bypassed during workflow execution.
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top: 16px;">
+        <label class="form-label">Notes & Documentation</label>
+        <textarea class="form-control" id="setting-notes" rows="4" placeholder="Document purpose, inputs, or edge cases for this node...">${notes}</textarea>
+      </div>
+    `;
+
+    // Event listeners for Settings
+    const onErrorSelect = container.querySelector('#setting-on-error');
+    onErrorSelect.addEventListener('change', (e) => {
+      node.onError = e.target.value;
+      if (node.onError === 'continueRegularOutput') {
+        node.continueOnFail = true;
+      } else {
+        node.continueOnFail = false;
+      }
+      this.canvas.render();
+    });
+
+    const retryCheck = container.querySelector('#setting-retry-on-fail');
+    const retryPanel = container.querySelector('#retry-options-panel');
+    retryCheck.addEventListener('change', (e) => {
+      node.retryOnFail = e.target.checked;
+      retryPanel.style.display = e.target.checked ? 'block' : 'none';
+    });
+
+    const maxTriesInput = container.querySelector('#setting-max-tries');
+    maxTriesInput.addEventListener('change', (e) => {
+      node.maxTries = Math.max(1, Math.min(10, parseInt(e.target.value, 10) || 3));
+    });
+
+    const waitTriesInput = container.querySelector('#setting-wait-between-tries');
+    waitTriesInput.addEventListener('change', (e) => {
+      node.waitBetweenTries = Math.max(0, parseInt(e.target.value, 10) || 1000);
+    });
+
+    const disabledCheck = container.querySelector('#setting-disabled');
+    disabledCheck.addEventListener('change', (e) => {
+      node.disabled = e.target.checked;
+      this.canvas.render();
+    });
+
+    const notesText = container.querySelector('#setting-notes');
+    notesText.addEventListener('input', (e) => {
+      node.notes = e.target.value;
+    });
+  }
 
     this.nodeDrawer.classList.add('open');
   }

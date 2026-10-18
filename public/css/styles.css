@@ -1854,6 +1854,119 @@ textarea.form-control {
   font-weight: 600;
 }
 
+/* --- Drawer Tabs & Settings --- */
+.drawer-tabs {
+  display: flex;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 4px;
+  margin-bottom: 16px;
+  gap: 4px;
+}
 
+.drawer-tab {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  text-align: center;
+  transition: all 0.15s ease;
+}
 
+.drawer-tab:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.05);
+}
 
+.drawer-tab.active {
+  color: #fff;
+  background: var(--accent-purple);
+  box-shadow: 0 2px 6px rgba(139, 92, 246, 0.4);
+}
+
+.drawer-tab-content {
+  display: none;
+}
+
+.drawer-tab-content.active {
+  display: block;
+}
+
+/* --- Error Output Port & Flow Styling --- */
+.node-port.error-port {
+  background: #ef4444 !important;
+  border-color: #fee2e2 !important;
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.7);
+}
+
+.node-port.error-port:hover {
+  background: #dc2626 !important;
+  transform: scale(1.35);
+  box-shadow: 0 0 12px #ef4444;
+}
+
+.connection-path.error-flow {
+  stroke: #ef4444 !important;
+  stroke-dasharray: 6 3;
+}
+
+/* --- Disabled Node Styling --- */
+.canvas-node.node-disabled {
+  opacity: 0.6;
+  border-style: dashed !important;
+  filter: grayscale(0.4);
+}
+
+.disabled-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: #475569;
+  color: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+/* --- Expression Assistant Box --- */
+.expression-helper-box {
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.25);
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  margin-bottom: 16px;
+}
+
+.expression-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.expression-chip {
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #a78bfa;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.72rem;
+  cursor: pointer;
+  user-select: all;
+  transition: all 0.15s ease;
+}
+
+.expression-chip:hover {
+  background: #334155;
+  color: #c4b5fd;
+  border-color: #8b5cf6;
+}

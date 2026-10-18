@@ -2,18 +2,25 @@ import { BaseNode, INodeDefinition } from './base';
 import { ManualTriggerNode } from './triggers/manual-trigger';
 import { WebhookTriggerNode } from './triggers/webhook-trigger';
 import { ScheduleTriggerNode } from './triggers/schedule-trigger';
+import { EmailTriggerNode } from './triggers/email-trigger';
+import { ErrorTriggerNode } from './triggers/error-trigger';
+
 import { HttpRequestNode } from './core/http-request';
 import { IfConditionNode } from './core/if-condition';
+import { SwitchNode } from './core/switch';
+import { LoopNode } from './core/loop';
+import { WaitNode } from './core/wait';
 import { SetDataNode } from './core/set-data';
 import { MergeNode } from './core/merge';
 import { CodeNode } from './core/code';
-import { GeminiNode } from './ai/gemini-node';
-import { AiAgentNode } from './ai/ai-agent-node';
 import { FilterNode } from './core/filter';
 import { DelayNode } from './core/delay';
 import { CryptoNode } from './core/crypto';
 import { WebhookResponseNode } from './core/webhook-response';
-import { EmailTriggerNode } from './triggers/email-trigger';
+import { ExecuteWorkflowNode } from './core/execute-workflow';
+import { ReadWriteFileNode } from './core/file';
+import { ExtractFromFileNode } from './core/extract-file';
+
 import { TelegramNode } from './apps/telegram';
 import { DiscordNode } from './apps/discord';
 import { EmailNode } from './apps/email';
@@ -24,6 +31,9 @@ import { GoogleSheetsNode } from './apps/google-sheets';
 import { AirtableNode } from './apps/airtable';
 import { GitHubNode } from './apps/github';
 import { StripeNode } from './apps/stripe';
+
+import { GeminiNode } from './ai/gemini-node';
+import { AiAgentNode } from './ai/ai-agent-node';
 
 export class NodeRegistry {
   private static instance: NodeRegistry;
@@ -46,17 +56,24 @@ export class NodeRegistry {
     this.register(new WebhookTriggerNode());
     this.register(new ScheduleTriggerNode());
     this.register(new EmailTriggerNode());
+    this.register(new ErrorTriggerNode());
 
-    // Core Actions & Logic
+    // Core Control Flow & Execution Logic
     this.register(new HttpRequestNode());
     this.register(new IfConditionNode());
+    this.register(new SwitchNode());
+    this.register(new LoopNode());
     this.register(new FilterNode());
     this.register(new DelayNode());
+    this.register(new WaitNode());
     this.register(new SetDataNode());
     this.register(new MergeNode());
     this.register(new CodeNode());
     this.register(new CryptoNode());
     this.register(new WebhookResponseNode());
+    this.register(new ExecuteWorkflowNode());
+    this.register(new ReadWriteFileNode());
+    this.register(new ExtractFromFileNode());
 
     // Apps & Social Connectors
     this.register(new TelegramNode());

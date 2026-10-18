@@ -167,7 +167,7 @@ class WorkflowCanvas {
     };
 
     const nodeEl = document.createElement('div');
-    nodeEl.className = 'canvas-node';
+    nodeEl.className = 'canvas-node' + (node.disabled ? ' node-disabled' : '');
     nodeEl.id = `node-${node.id}`;
     if (this.selectedNodeId === node.id) nodeEl.classList.add('selected');
 
@@ -176,6 +176,7 @@ class WorkflowCanvas {
 
     // Header color bar
     const categoryColor = nodeDef.color || '#3b82f6';
+    const disabledBadge = node.disabled ? `<span class="disabled-pill">Disabled</span>` : '';
 
     nodeEl.innerHTML = `
       <div class="node-header" style="border-top: 3px solid ${categoryColor}">
@@ -183,6 +184,7 @@ class WorkflowCanvas {
           <div class="node-icon" style="background: ${categoryColor}">⚡</div>
           <div class="node-name" title="${node.name}">${node.name}</div>
         </div>
+        ${disabledBadge}
       </div>
       <div class="node-type-label">${nodeDef.name}</div>
       <div class="node-status-badge"></div>
@@ -192,7 +194,15 @@ class WorkflowCanvas {
     // Input and Output Ports
     const portsContainer = nodeEl.querySelector('.node-ports-container');
     const inputs = nodeDef.inputs || [];
-    const outputs = nodeDef.outputs || [];
+    let outputs = [...(nodeDef.outputs || [])];
+
+    // Dynamically show error output port if onError is continueErrorOutput
+    if (node.onError === 'continueErrorOutput') {
+      const hasErrorPort = outputs.some((o) => o.name === 'error' || o.type === 'error');
+      if (!hasErrorPort) {
+        outputs.push({ name: 'error', label: 'Error Output (Port 1)', isError: true });
+      }
+    }
 
     // Render input ports (left)
     inputs.forEach((inp, idx) => {
@@ -216,9 +226,10 @@ class WorkflowCanvas {
 
     // Render output ports (right)
     outputs.forEach((out, idx) => {
+      const isErrorPort = out.isError || out.name === 'error' || (node.onError === 'continueErrorOutput' && idx === 1);
       const port = document.createElement('div');
-      port.className = 'node-port output';
-      port.title = out.label || out.name || 'Output';
+      port.className = 'node-port output' + (isErrorPort ? ' error-port' : '');
+      port.title = out.label || out.name || (isErrorPort ? 'Error Output (Port 1)' : 'Output');
       port.dataset.nodeId = node.id;
       port.dataset.portIndex = idx;
       port.dataset.portType = 'output';
@@ -269,9 +280,10 @@ class WorkflowCanvas {
         const sourcePos = this.getSourcePortPosition(sourceNode, conn.sourceOutput || 0);
         const targetPos = this.getTargetPortPosition(targetNode, conn.targetInput || 0);
 
+        const isErrorConn = (conn.sourceOutput === 1 && sourceNode.onError === 'continueErrorOutput');
         const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         pathEl.setAttribute('d', this.calculateBezierPath(sourcePos.x, sourcePos.y, targetPos.x, targetPos.y));
-        pathEl.setAttribute('class', 'connection-path');
+        pathEl.setAttribute('class', 'connection-path' + (isErrorConn ? ' error-flow' : ''));
         pathEl.dataset.source = sourceNode.name;
         pathEl.dataset.sourceId = sourceNode.id;
         pathEl.dataset.target = targetNode.name;
@@ -313,9 +325,10 @@ class WorkflowCanvas {
     this.connectSourceNode = node;
     this.connectSourceOutput = outputIndex;
 
+    const isErrorOutput = (outputIndex === 1 && node.onError === 'continueErrorOutput');
     const sourcePos = this.getSourcePortPosition(node, outputIndex);
     this.tempConnectionPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    this.tempConnectionPath.setAttribute('class', 'connection-path active-flow');
+    this.tempConnectionPath.setAttribute('class', 'connection-path active-flow' + (isErrorOutput ? ' error-flow' : ''));
     this.tempConnectionPath.setAttribute('d', this.calculateBezierPath(sourcePos.x, sourcePos.y, sourcePos.x, sourcePos.y));
     this.svg.appendChild(this.tempConnectionPath);
   }

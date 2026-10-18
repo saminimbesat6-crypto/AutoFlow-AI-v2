@@ -10,9 +10,10 @@ export function runMigrations(db: DatabaseSync): void {
   `);
 
   const stmt = db.prepare('SELECT version FROM schema_migrations WHERE version = ?');
-  const check = stmt.get(1);
 
-  if (!check) {
+  // Migration 1: Base Tables
+  const check1 = stmt.get(1);
+  if (!check1) {
     db.exec(`
       CREATE TABLE IF NOT EXISTS workflows (
         id TEXT PRIMARY KEY,
@@ -83,5 +84,24 @@ export function runMigrations(db: DatabaseSync): void {
 
     const insertStmt = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
     insertStmt.run(1, new Date().toISOString());
+  }
+
+  // Migration 2: Webhook Resume Tokens for Wait Nodes
+  const check2 = stmt.get(2);
+  if (!check2) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS resume_tokens (
+        token TEXT PRIMARY KEY,
+        execution_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT,
+        FOREIGN KEY (execution_id) REFERENCES executions(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_resume_tokens_token ON resume_tokens(token);
+    `);
+
+    const insertStmt2 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+    insertStmt2.run(2, new Date().toISOString());
   }
 }

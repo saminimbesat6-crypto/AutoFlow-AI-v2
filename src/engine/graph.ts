@@ -4,7 +4,7 @@ export interface GraphValidationResult {
   valid: boolean;
   errors: string[];
   warnings: string[];
-  executionOrder: string[]; // List of node names/IDs in topological execution order
+  executionOrder: string[]; // List of node IDs in topological execution order
 }
 
 export class WorkflowGraph {
@@ -72,7 +72,12 @@ export class WorkflowGraph {
 
   findTriggerNodes(): WorkflowNode[] {
     return this.workflow.nodes.filter((node) => {
-      const isTriggerType = node.type.includes('trigger') || node.type === 'manual-trigger' || node.type === 'webhook-trigger' || node.type === 'schedule-trigger';
+      const isTriggerType = node.type.includes('trigger') ||
+        node.type === 'manual-trigger' ||
+        node.type === 'webhook-trigger' ||
+        node.type === 'schedule-trigger' ||
+        node.type === 'email-trigger' ||
+        node.type === 'error-trigger';
       const hasZeroInDegree = (this.inDegree.get(node.id) || 0) === 0;
       return isTriggerType || hasZeroInDegree;
     });
@@ -96,11 +101,31 @@ export class WorkflowGraph {
       names.add(node.name);
     }
 
-    // Cycle detection using Kahn's algorithm
-    const inDegreeCopy = new Map(this.inDegree);
-    const queue: string[] = [];
+    // Compute forward in-degree, excluding authorized feedback edges to Loop nodes
+    const forwardInDegree = new Map<string, number>();
+    for (const node of this.workflow.nodes) {
+      forwardInDegree.set(node.id, 0);
+    }
 
-    for (const [nodeId, degree] of inDegreeCopy.entries()) {
+    for (const [sourceId, edges] of this.adjacency.entries()) {
+      for (const edge of edges) {
+        const targetNode = this.nodeMap.get(edge.target);
+        const isLoopNode = targetNode && (targetNode.type === 'loop' || targetNode.type === 'split-in-batches');
+        // Allow feedback edge from downstream loop body back into loop node
+        if (isLoopNode && sourceId !== edge.target) {
+          // Check if this source has the loop node in its ancestors
+          const isFeedback = this.isAncestor(edge.target, sourceId);
+          if (isFeedback) {
+            continue; // Exclude loopback edge from forward DAG ordering
+          }
+        }
+        forwardInDegree.set(edge.target, (forwardInDegree.get(edge.target) || 0) + 1);
+      }
+    }
+
+    // Kahn's algorithm for forward topological sort
+    const queue: string[] = [];
+    for (const [nodeId, degree] of forwardInDegree.entries()) {
       if (degree === 0) {
         queue.push(nodeId);
       }
@@ -113,8 +138,12 @@ export class WorkflowGraph {
 
       const edges = this.adjacency.get(curr) || [];
       for (const edge of edges) {
-        const nextIn = (inDegreeCopy.get(edge.target) || 0) - 1;
-        inDegreeCopy.set(edge.target, nextIn);
+        const targetNode = this.nodeMap.get(edge.target);
+        const isLoopFeedback = targetNode && (targetNode.type === 'loop' || targetNode.type === 'split-in-batches') && this.isAncestor(edge.target, curr);
+        if (isLoopFeedback) continue;
+
+        const nextIn = (forwardInDegree.get(edge.target) || 0) - 1;
+        forwardInDegree.set(edge.target, nextIn);
         if (nextIn === 0) {
           queue.push(edge.target);
         }
@@ -131,5 +160,21 @@ export class WorkflowGraph {
       warnings,
       executionOrder
     };
+  }
+
+  private isAncestor(ancestorId: string, currentId: string, visited: Set<string> = new Set()): boolean {
+    if (ancestorId === currentId) return true;
+    if (visited.has(currentId)) return false;
+    visited.add(currentId);
+
+    const preds = this.predecessors.get(currentId);
+    if (!preds) return false;
+
+    for (const pred of preds) {
+      if (pred === ancestorId || this.isAncestor(ancestorId, pred, visited)) {
+        return true;
+      }
+    }
+    return false;
   }
 }
