@@ -16,6 +16,9 @@ class AutoFlowApp {
     this.initUI();
     this.initAiCopilot();
     this.initFullscreenViewer();
+    this.initAutoFix();
+    this.initTemplatesModal();
+    this.initPayloadSimulator();
     this.loadInitialData();
   }
 
@@ -1355,6 +1358,19 @@ class AutoFlowApp {
                   conn.classList.add('status-error');
                 }
               });
+
+              // Add 1-click Auto-Fix button directly on the failed card in flowchart!
+              if (card && !card.querySelector('.fs-card-autofix-btn')) {
+                const fixBtn = document.createElement('button');
+                fixBtn.className = 'btn-autofix fs-card-autofix-btn';
+                fixBtn.style.cssText = 'margin-top: 10px; width: 100%; justify-content: center;';
+                fixBtn.innerHTML = '⚡ Auto-Fix with Copilot';
+                fixBtn.addEventListener('click', (e) => {
+                  e.stopPropagation();
+                  this.triggerAutoFix(nodeId, record.error, record.inputData);
+                });
+                card.appendChild(fixBtn);
+              }
             }
 
             // Visual pause so the real-time progression from one node to the next is clearly observable
@@ -1474,7 +1490,16 @@ class AutoFlowApp {
       sidebar.appendChild(pill);
 
       if (idx === 0) {
-        if (header) header.textContent = `Output Data: ${node.name} (${node.type})`;
+        if (header) {
+          if (execRecord && execRecord.status === 'error') {
+            header.innerHTML = `Output Data: ${node.name} (${node.type}) <button class="btn-autofix" style="float: right;" id="autofix-header-btn">⚡ Auto-Fix with Copilot</button>`;
+            document.getElementById('autofix-header-btn')?.addEventListener('click', () => {
+              this.triggerAutoFix(node.id, execRecord.error, execRecord.inputData);
+            });
+          } else {
+            header.textContent = `Output Data: ${node.name} (${node.type})`;
+          }
+        }
         if (execRecord) {
           const displayObj = {
             status: execRecord.status,
@@ -1495,6 +1520,333 @@ class AutoFlowApp {
     const viewer = document.getElementById('fs-json-code-viewer');
     if (!viewer || !this.currentWorkflow) return;
     viewer.textContent = JSON.stringify(this.currentWorkflow, null, 2);
+  }
+
+  // --- 1. AI Self-Healing & Auto-Fix Implementation ---
+  initAutoFix() {
+    const modal = document.getElementById('autofix-modal');
+    const closeBtn = document.getElementById('close-autofix-modal-btn');
+    const cancelBtn = document.getElementById('cancel-autofix-btn');
+    const applyBtn = document.getElementById('apply-autofix-btn');
+    const applyRerunBtn = document.getElementById('apply-and-rerun-autofix-btn');
+
+    closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+    cancelBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+
+    applyBtn?.addEventListener('click', async () => {
+      if (!this.pendingAutoFix) return;
+      await this.applyAutoFix(this.pendingAutoFix);
+      modal?.classList.remove('open');
+    });
+
+    applyRerunBtn?.addEventListener('click', async () => {
+      if (!this.pendingAutoFix) return;
+      await this.applyAutoFix(this.pendingAutoFix);
+      modal?.classList.remove('open');
+      await this.executeCurrentWorkflowStream();
+    });
+  }
+
+  async triggerAutoFix(nodeId, errorMsg = null, inputData = null) {
+    if (!this.currentWorkflow) return;
+    const node = this.currentWorkflow.nodes?.find((n) => n.id === nodeId || n.name === nodeId);
+    if (!node) return;
+
+    const modal = document.getElementById('autofix-modal');
+    const subtitle = document.getElementById('autofix-modal-subtitle');
+    const loading = document.getElementById('autofix-loading');
+    const results = document.getElementById('autofix-results');
+    const footer = document.getElementById('autofix-modal-footer');
+    const diagText = document.getElementById('autofix-diagnosis-text');
+    const solText = document.getElementById('autofix-solution-text');
+    const paramsPreview = document.getElementById('autofix-params-preview');
+
+    if (subtitle) subtitle.textContent = `Analyzing failure on "${node.name}" (${node.type})...`;
+    if (loading) loading.style.display = 'block';
+    if (results) results.style.display = 'none';
+    if (footer) footer.style.display = 'none';
+
+    modal?.classList.add('open');
+
+    // Retrieve runtime error from last execution if not passed
+    let nodeError = errorMsg;
+    let nodeInput = inputData;
+    if (!nodeError && this.lastExecutionDetails?.nodes) {
+      const rec = this.lastExecutionDetails.nodes.find((r) => r.nodeId === node.id || r.nodeName === node.name);
+      if (rec) {
+        nodeError = rec.error;
+        nodeInput = rec.inputData;
+      }
+    }
+
+    try {
+      const res = await this.api('/api/ai/assistant/auto-fix', {
+        method: 'POST',
+        body: JSON.stringify({
+          workflow: this.currentWorkflow,
+          nodeId: node.id,
+          error: nodeError || 'Runtime execution failed',
+          inputData: nodeInput || []
+        })
+      });
+
+      const fix = res.data;
+      this.pendingAutoFix = fix;
+
+      if (loading) loading.style.display = 'none';
+      if (results) results.style.display = 'block';
+      if (footer) footer.style.display = 'flex';
+
+      if (diagText) diagText.textContent = fix.diagnosis;
+      if (solText) solText.textContent = fix.fixExplanation;
+      if (paramsPreview) paramsPreview.textContent = JSON.stringify(fix.fixedParameters, null, 2);
+    } catch (err) {
+      if (loading) {
+        loading.innerHTML = `
+          <div style="color: #f87171; font-weight: bold;">⚠️ Auto-Fix Diagnosis Failed</div>
+          <p style="color: #94a3b8; font-size: 0.85rem; margin-top: 8px;">${err.message}</p>
+        `;
+      }
+    }
+  }
+
+  async applyAutoFix(fixData) {
+    if (!this.currentWorkflow || !fixData) return;
+    const node = this.currentWorkflow.nodes?.find((n) => n.id === fixData.nodeId);
+    if (!node) return;
+
+    node.parameters = fixData.fixedParameters;
+    await this.saveCurrentWorkflow();
+    this.openWorkflow(this.currentWorkflow);
+    this.updateFullscreenOutputIfOpen();
+    this.toast(`Applied fix to "${node.name}"!`, 'success');
+  }
+
+  // --- 2. Workflow Templates Implementation ---
+  initTemplatesModal() {
+    const modal = document.getElementById('templates-modal');
+    const openBtn = document.getElementById('templates-btn');
+    const closeBtn = document.getElementById('close-templates-modal-btn');
+    const searchInput = document.getElementById('templates-search-input');
+    const catPills = document.querySelectorAll('.tmpl-cat-btn');
+
+    openBtn?.addEventListener('click', async () => {
+      modal?.classList.add('open');
+      await this.loadTemplates('all', '');
+    });
+
+    closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+
+    catPills.forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        catPills.forEach((b) => {
+          b.classList.remove('btn-primary', 'active');
+          b.classList.add('btn-secondary');
+        });
+        btn.classList.add('btn-primary', 'active');
+        btn.classList.remove('btn-secondary');
+        await this.loadTemplates(btn.dataset.cat, searchInput?.value || '');
+      });
+    });
+
+    searchInput?.addEventListener('input', async (e) => {
+      const activeCat = document.querySelector('.tmpl-cat-btn.active')?.dataset.cat || 'all';
+      await this.loadTemplates(activeCat, e.target.value);
+    });
+  }
+
+  async loadTemplates(category = 'all', query = '') {
+    const grid = document.getElementById('templates-cards-grid');
+    if (!grid) return;
+
+    try {
+      const res = await this.api(`/api/templates?category=${encodeURIComponent(category)}`);
+      let list = res.data || [];
+
+      if (query.trim()) {
+        const q = query.toLowerCase();
+        list = list.filter((t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.description.toLowerCase().includes(q)
+        );
+      }
+
+      grid.innerHTML = '';
+      if (list.length === 0) {
+        grid.innerHTML = '<div style="color: var(--text-muted); padding: 30px; text-align: center; grid-column: 1/-1;">No templates matching search.</div>';
+        return;
+      }
+
+      for (const tmpl of list) {
+        const card = document.createElement('div');
+        card.className = 'template-card';
+
+        const nodeTags = (tmpl.nodes || []).slice(0, 4).map((n) => `<span class="template-node-tag">${n.name}</span>`).join(' ');
+
+        card.innerHTML = `
+          <div>
+            <div class="template-card-header">
+              <div class="template-card-icon">${tmpl.icon || '⚡'}</div>
+              <div class="template-card-title">${tmpl.name}</div>
+            </div>
+            <div class="template-card-desc">${tmpl.description}</div>
+            <div class="template-card-pipeline">${nodeTags}</div>
+          </div>
+          <button class="btn btn-primary btn-sm use-tmpl-btn" style="width: 100%;">⚡ Use This Template</button>
+        `;
+
+        card.querySelector('.use-tmpl-btn')?.addEventListener('click', async () => {
+          document.getElementById('templates-modal')?.classList.remove('open');
+          this.toast(`Loading template "${tmpl.name}"...`, 'info');
+
+          try {
+            const cloneRes = await this.api(`/api/templates/${tmpl.id}/clone`, { method: 'POST' });
+            const createdWf = cloneRes.data;
+            this.openWorkflow(createdWf);
+            this.loadWorkflowsList();
+            await this.buildWorkflowInRealTime(createdWf, false);
+            this.toast(`Template "${createdWf.name}" loaded successfully!`, 'success');
+          } catch (err) {
+            this.toast(`Failed to load template: ${err.message}`, 'error');
+          }
+        });
+
+        grid.appendChild(card);
+      }
+    } catch (e) {
+      grid.innerHTML = '<div style="color: #ef4444; padding: 20px;">Failed to load templates.</div>';
+    }
+  }
+
+  // --- 3. Live Webhook Payload Simulator Implementation ---
+  initPayloadSimulator() {
+    const modal = document.getElementById('payload-modal');
+    const openBtn = document.getElementById('payload-sim-btn');
+    const closeBtn = document.getElementById('close-payload-modal-btn');
+    const cancelBtn = document.getElementById('cancel-payload-btn');
+    const fireBtn = document.getElementById('fire-payload-btn');
+    const genBtn = document.getElementById('generate-payload-gemini-btn');
+    const targetSelect = document.getElementById('sim-target-node');
+    const textarea = document.getElementById('sim-payload-textarea');
+
+    openBtn?.addEventListener('click', () => {
+      if (!this.currentWorkflow) {
+        this.toast('Open a workflow first', 'error');
+        return;
+      }
+      modal?.classList.add('open');
+
+      if (targetSelect) {
+        targetSelect.innerHTML = '';
+        const nodes = this.currentWorkflow.nodes || [];
+        nodes.forEach((n) => {
+          const opt = document.createElement('option');
+          opt.value = n.id;
+          opt.textContent = `${n.name} (${n.type})`;
+          if (n.type.includes('webhook') || n.type.includes('trigger')) {
+            opt.selected = true;
+          }
+          targetSelect.appendChild(opt);
+        });
+      }
+    });
+
+    closeBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+    cancelBtn?.addEventListener('click', () => modal?.classList.remove('open'));
+
+    genBtn?.addEventListener('click', async () => {
+      genBtn.disabled = true;
+      genBtn.innerHTML = '<span class="fs-spin">⏳</span> Generating with Gemini...';
+      try {
+        const res = await this.api('/api/ai/assistant/chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            message: `Generate a realistic JSON payload for testing an automation workflow: "${this.currentWorkflow?.name || 'Order Intake'}". Include IDs, customer information, numeric amounts, timestamps, and nested items.`
+          })
+        });
+
+        let text = res.data?.reply || '';
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) {
+          textarea.value = JSON.stringify(JSON.parse(match[0]), null, 2);
+          this.toast('Realistic payload synthesized by Gemini!', 'success');
+        } else {
+          textarea.value = JSON.stringify({
+            orderId: 'ORD-' + Math.floor(Math.random() * 89999 + 10000),
+            amount: 249.99,
+            customer: { name: 'Sarah Connor', email: 'sarah@example.com' },
+            items: [{ sku: 'A100', price: 249.99, qty: 1 }],
+            timestamp: new Date().toISOString()
+          }, null, 2);
+        }
+      } catch (err) {
+        textarea.value = JSON.stringify({
+          orderId: 'ORD-' + Math.floor(Math.random() * 89999 + 10000),
+          amount: 175.50,
+          customer: { name: 'Alex Johnson', email: 'alex@example.com' },
+          timestamp: new Date().toISOString()
+        }, null, 2);
+      } finally {
+        genBtn.disabled = false;
+        genBtn.innerHTML = '✨ Generate Realistic Data with Gemini';
+      }
+    });
+
+    fireBtn?.addEventListener('click', async () => {
+      let parsed = {};
+      try {
+        parsed = JSON.parse(textarea.value.trim() || '{}');
+      } catch (e) {
+        this.toast('Invalid JSON format in payload body', 'error');
+        return;
+      }
+
+      modal?.classList.remove('open');
+      this.toast('Dispatching simulated webhook payload...', 'info');
+
+      this.openFullscreenViewer();
+      await this.executeCurrentWorkflowStreamWithData([ { json: parsed } ]);
+    });
+  }
+
+  async executeCurrentWorkflowStreamWithData(initialData = []) {
+    if (!this.currentWorkflow || !this.currentWorkflow.id) return;
+    await this.saveCurrentWorkflow();
+
+    try {
+      const res = await this.api(`/api/workflows/${this.currentWorkflow.id}/execute`, {
+        method: 'POST',
+        body: JSON.stringify({ initialData })
+      });
+      this.lastExecutionDetails = res.data;
+      this.renderFullscreenOutput();
+
+      if (res.data?.nodes) {
+        for (const nr of res.data.nodes) {
+          const card = document.getElementById(`fs-card-${nr.nodeId}`);
+          const badge = document.getElementById(`fs-badge-${nr.nodeId}`);
+          if (card) {
+            card.className = `fs-node-card status-${nr.status}`;
+          }
+          if (badge) {
+            badge.className = `fs-node-exec-badge status-${nr.status}`;
+            badge.textContent = nr.status === 'success' ? `✓ SUCCESS (${nr.duration}ms)` : '✗ FAILED';
+          }
+          if (nr.status === 'success') {
+            document.querySelectorAll('.fs-chart-connector').forEach((c) => {
+              if (c.dataset.source === nr.nodeName || c.dataset.sourceId === nr.nodeId) {
+                c.classList.add('status-success');
+              }
+            });
+            this.canvas.highlightConnection(nr.nodeName, null, 'success');
+          }
+          this.canvas.setNodeExecutionStatus(nr.nodeId, nr.status, nr.duration);
+        }
+      }
+      this.toast(`Simulation finished in ${res.data.execution.duration}ms!`, 'success');
+    } catch (err) {
+      this.toast(`Simulation failed: ${err.message}`, 'error');
+    }
   }
 }
 

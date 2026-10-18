@@ -65,6 +65,32 @@ export class GeminiNode extends BaseNode {
       displayName: 'Max Output Tokens',
       type: 'number',
       default: 2048
+    },
+    {
+      name: 'includeImage',
+      displayName: 'Multi-Modal Vision (Image/Doc)',
+      type: 'boolean',
+      default: false,
+      description: 'Enable multi-modal vision to analyze photos, diagrams, invoices, and documents'
+    },
+    {
+      name: 'imageData',
+      displayName: 'Image Data or URL',
+      type: 'string',
+      description: 'Base64 image string, data URL (data:image/jpeg;base64,...), or remote HTTP image URL'
+    },
+    {
+      name: 'imageMimeType',
+      displayName: 'Image / Document Type',
+      type: 'options',
+      default: 'image/jpeg',
+      options: [
+        { name: 'JPEG Image (image/jpeg)', value: 'image/jpeg' },
+        { name: 'PNG Image (image/png)', value: 'image/png' },
+        { name: 'WebP Image (image/webp)', value: 'image/webp' },
+        { name: 'GIF Image (image/gif)', value: 'image/gif' },
+        { name: 'PDF Document (application/pdf)', value: 'application/pdf' }
+      ]
     }
   ];
 
@@ -92,9 +118,49 @@ export class GeminiNode extends BaseNode {
       const jsonOutput = context.getNodeParameter('jsonOutput', i, false);
       const temperature = Number(context.getNodeParameter('temperature', i, 0.7));
       const maxTokens = Number(context.getNodeParameter('maxTokens', i, 2048));
+      const includeImage = context.getNodeParameter('includeImage', i, false);
 
       if (!prompt) {
         throw new Error('Gemini node requires a non-empty prompt.');
+      }
+
+      const parts: any[] = [{ text: prompt }];
+
+      if (includeImage) {
+        const rawImageData = String(context.getNodeParameter('imageData', i, '') || '').trim();
+        let mimeType = context.getNodeParameter('imageMimeType', i, 'image/jpeg');
+        let base64Data = rawImageData;
+
+        if (rawImageData) {
+          // Case 1: Data URL e.g. data:image/png;base64,iVBORw...
+          const dataUrlMatch = rawImageData.match(/^data:([^;]+);base64,(.+)$/s);
+          if (dataUrlMatch) {
+            mimeType = dataUrlMatch[1];
+            base64Data = dataUrlMatch[2].trim();
+          } else if (rawImageData.startsWith('http://') || rawImageData.startsWith('https://')) {
+            // Case 2: Remote image URL - fetch and encode
+            try {
+              const imgRes = await fetch(rawImageData);
+              if (imgRes.ok) {
+                const headerMime = imgRes.headers.get('content-type');
+                if (headerMime) mimeType = headerMime.split(';')[0];
+                const arrayBuf = await imgRes.arrayBuffer();
+                base64Data = Buffer.from(arrayBuf).toString('base64');
+              }
+            } catch {
+              // Proceed with fallback or error
+            }
+          }
+
+          if (base64Data) {
+            parts.push({
+              inlineData: {
+                mimeType,
+                data: base64Data
+              }
+            });
+          }
+        }
       }
 
       const response = await GeminiClient.generateContent({
@@ -104,7 +170,7 @@ export class GeminiNode extends BaseNode {
         contents: [
           {
             role: 'user',
-            parts: [{ text: prompt }]
+            parts
           }
         ],
         temperature,
@@ -118,7 +184,8 @@ export class GeminiNode extends BaseNode {
           json: response.json || null,
           usage: response.usage || {},
           model,
-          promptUsed: prompt
+          promptUsed: prompt,
+          hasVisionData: includeImage
         },
         pairedItem: i
       });

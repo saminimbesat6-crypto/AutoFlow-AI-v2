@@ -200,5 +200,108 @@ If the user provides an existing workflow in context, modify or extend it logica
     }
   });
 
+  // Self-Healing & 1-Click Auto-Fix endpoint
+  router.post('/auto-fix', async (req: Request, res: Response) => {
+    try {
+      const { workflow, nodeId, error, inputData, apiKey: directKey } = req.body;
+
+      if (!workflow || !nodeId) {
+        return res.status(400).json({ success: false, error: 'Workflow and nodeId are required' });
+      }
+
+      const node = (workflow.nodes || []).find((n: any) => n.id === nodeId || n.name === nodeId);
+      if (!node) {
+        return res.status(404).json({ success: false, error: `Node "${nodeId}" not found in workflow` });
+      }
+
+      // Resolve Gemini API key
+      let apiKey = directKey;
+      if (!apiKey) {
+        const creds = credentialsManager.list();
+        const geminiCred = creds.find((c) => c.type === 'gemini_api_key');
+        if (geminiCred) {
+          const full = credentialsManager.get(geminiCred.id, true);
+          apiKey = full?.data?.apiKey;
+        }
+      }
+      if (!apiKey && process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'your-gemini-api-key-here') {
+        apiKey = process.env.GEMINI_API_KEY;
+      }
+
+      if (!apiKey) {
+        return res.status(400).json({
+          success: false,
+          needsApiKey: true,
+          error: 'Gemini API key is required for AI Self-Healing.'
+        });
+      }
+
+      const nodeDef = nodeRegistry.get(node.type);
+      const allowedParams = (nodeDef?.properties || []).map((p) => `${p.name} (${p.type}): ${p.description || ''}`).join(', ');
+
+      const prompt = `A workflow node has encountered a runtime error during execution in AutoFlow AI.
+
+NODE INFORMATION:
+- Name: "${node.name}"
+- Type: "${node.type}"
+- Current Parameters:
+${JSON.stringify(node.parameters || {}, null, 2)}
+- Allowed Parameter Schema for this node type:
+${allowedParams || 'Standard node parameters'}
+
+EXECUTION CONTEXT:
+- Runtime Error: "${error || 'Execution failed with unknown error'}"
+- Sample Input Data to this node:
+${JSON.stringify((inputData || []).slice(0, 2), null, 2)}
+
+TASK:
+1. Identify the root cause of the error.
+2. Determine how to modify the node parameters to fix the error (e.g. fix URL, fix expression syntax like {{ $json... }}, adjust headers, change fallback values).
+3. Return a clean replacement parameters object that resolves the error.
+
+Respond ONLY with a valid JSON object matching this schema:
+{
+  "diagnosis": "Concise 1-2 sentence explanation of why this node failed",
+  "fixExplanation": "Clear description of the exact change made to fix it",
+  "fixedParameters": { /* complete replacement parameters object for this node */ },
+  "confidence": "high" | "medium"
+}`;
+
+      const response = await GeminiClient.generateContent({
+        apiKey,
+        model: 'gemini-3.8-flash',
+        systemInstruction: 'You are AutoFlow AI debugging expert. Analyze the failure and output valid JSON only.',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        temperature: 0.2,
+        responseMimeType: 'application/json',
+        timeoutMs: 60000
+      });
+
+      let fixData: any;
+      try {
+        fixData = response.json || JSON.parse(response.text);
+      } catch {
+        const match = response.text.match(/\{[\s\S]*\}/);
+        if (match) fixData = JSON.parse(match[0]);
+        else throw new Error('Could not parse Gemini auto-fix response');
+      }
+
+      res.json({
+        success: true,
+        data: {
+          nodeId: node.id,
+          nodeName: node.name,
+          diagnosis: fixData.diagnosis || 'Parameter issue identified',
+          fixExplanation: fixData.fixExplanation || 'Adjusted parameters to resolve execution error',
+          fixedParameters: fixData.fixedParameters || node.parameters,
+          confidence: fixData.confidence || 'high'
+        }
+      });
+    } catch (err: any) {
+      console.error('[Auto-Fix Error]', err);
+      res.status(500).json({ success: false, error: err.message || 'Error running AI Auto-Fix' });
+    }
+  });
+
   return router;
 }

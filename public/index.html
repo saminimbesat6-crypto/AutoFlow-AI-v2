@@ -27,7 +27,8 @@
       </button>
       <button class="btn btn-secondary btn-sm" id="fullscreen-workflow-btn" title="Fullscreen view of workflow chart & output">
         ⛶ Fullscreen & Output
-      </button>
+      <button class="btn btn-secondary btn-sm" id="templates-btn" title="Explore Pre-built Workflow Blueprints">📚 Templates</button>
+      <button class="btn btn-secondary btn-sm" id="payload-sim-btn" title="Simulate Webhook Trigger Payloads">🧪 Test Payload</button>
       <button class="btn btn-secondary btn-sm" id="export-n8n-btn" title="Export in n8n-compatible format">Export n8n</button>
       <button class="btn btn-secondary btn-sm" id="export-autoflow-btn" title="Export native AutoFlow format">Export JSON</button>
       <button class="btn btn-secondary btn-sm" id="import-workflow-btn">Import</button>
@@ -336,6 +337,110 @@
       <!-- 3. Raw JSON View -->
       <div class="fs-panel" id="fs-panel-json">
         <pre class="fs-json-viewer" id="fs-json-code-viewer"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Self-Healing Auto-Fix Modal -->
+  <div class="modal-overlay" id="autofix-modal">
+    <div class="modal-card" style="max-width: 620px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">⚡</span>
+          <div>
+            <h3 style="font-size: 1.1rem; color: #fff; margin: 0;">Copilot AI Self-Healing</h3>
+            <div style="font-size: 0.78rem; color: #94a3b8;" id="autofix-modal-subtitle">Diagnosing node failure...</div>
+          </div>
+        </div>
+        <button class="btn-icon" id="close-autofix-modal-btn">✕</button>
+      </div>
+      <div class="modal-body" id="autofix-modal-body">
+        <div id="autofix-loading" style="text-align: center; padding: 30px;">
+          <div class="fs-spin" style="font-size: 2rem; color: #8b5cf6;">⏳</div>
+          <p style="margin-top: 12px; color: #cbd5e1; font-size: 0.9rem;">Gemini is analyzing the runtime error and synthesizing an automatic patch...</p>
+        </div>
+        <div id="autofix-results" style="display: none;">
+          <div class="autofix-section">
+            <div class="autofix-label">🔍 Root Cause Diagnosis:</div>
+            <div class="autofix-text" id="autofix-diagnosis-text"></div>
+          </div>
+          <div class="autofix-section" style="margin-top: 12px;">
+            <div class="autofix-label">💡 Proposed Solution:</div>
+            <div class="autofix-text" id="autofix-solution-text"></div>
+          </div>
+          <div class="autofix-section" style="margin-top: 12px;">
+            <div class="autofix-label">📝 Proposed Parameter Patch:</div>
+            <pre class="autofix-code" id="autofix-params-preview"></pre>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer" id="autofix-modal-footer" style="display: none;">
+        <button class="btn btn-secondary" id="cancel-autofix-btn">Dismiss</button>
+        <button class="btn btn-secondary" id="apply-autofix-btn">Apply Fix</button>
+        <button class="btn btn-primary" id="apply-and-rerun-autofix-btn">⚡ Apply & Re-Run Pipeline</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 1-Click Workflow Templates Modal -->
+  <div class="modal-overlay" id="templates-modal">
+    <div class="modal-card" style="max-width: 880px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">📚</span>
+          <div>
+            <h3 style="font-size: 1.1rem; color: #fff; margin: 0;">Workflow Blueprint Templates</h3>
+            <div style="font-size: 0.78rem; color: #94a3b8;">Choose a pre-configured, battle-tested automation pipeline</div>
+          </div>
+        </div>
+        <button class="btn-icon" id="close-templates-modal-btn">✕</button>
+      </div>
+      <div class="templates-filter-bar">
+        <input type="text" class="form-control" id="templates-search-input" placeholder="Search templates (e.g. Telegram, Crypto, Webhook, Digest)..." style="flex: 1;" />
+        <div class="templates-categories" id="templates-cat-pills">
+          <button class="btn btn-sm btn-primary tmpl-cat-btn active" data-cat="all">All</button>
+          <button class="btn btn-sm btn-secondary tmpl-cat-btn" data-cat="ai">AI & Gemini</button>
+          <button class="btn btn-sm btn-secondary tmpl-cat-btn" data-cat="alerts">Alerts & Bots</button>
+          <button class="btn btn-sm btn-secondary tmpl-cat-btn" data-cat="webhooks">Webhooks</button>
+        </div>
+      </div>
+      <div class="modal-body" style="overflow-y: auto; flex: 1; padding: 16px;">
+        <div class="templates-grid" id="templates-cards-grid">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live Webhook Payload Simulator Modal -->
+  <div class="modal-overlay" id="payload-modal">
+    <div class="modal-card" style="max-width: 650px;">
+      <div class="modal-header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">🧪</span>
+          <div>
+            <h3 style="font-size: 1.1rem; color: #fff; margin: 0;">Webhook Payload Simulator</h3>
+            <div style="font-size: 0.78rem; color: #94a3b8;">Test workflow execution with synthetic or custom webhook inputs</div>
+          </div>
+        </div>
+        <button class="btn-icon" id="close-payload-modal-btn">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+            <label class="form-label" style="margin: 0;">Webhook JSON Body</label>
+            <button class="btn btn-secondary btn-sm" id="generate-payload-gemini-btn">✨ Generate Realistic Data with Gemini</button>
+          </div>
+          <textarea id="sim-payload-textarea" class="form-control" rows="8" placeholder="{\n  &quot;orderId&quot;: &quot;ORD-12345&quot;,\n  &quot;amount&quot;: 150,\n  &quot;customer&quot;: &quot;Alex Johnson&quot;\n}"></textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Simulation Target</label>
+          <select id="sim-target-node" class="form-control"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancel-payload-btn">Cancel</button>
+        <button class="btn btn-primary" id="fire-payload-btn">▶ Fire Simulated Webhook</button>
       </div>
     </div>
   </div>

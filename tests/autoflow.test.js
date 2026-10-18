@@ -12,6 +12,7 @@ const { ExecutionContext } = require('../dist/engine/context');
 const { WorkflowExecutor } = require('../dist/engine/executor');
 const { WorkflowAdapter } = require('../dist/engine/adapter');
 const { WorkflowRepository } = require('../dist/database/repositories/workflow-repository');
+const { NodeRegistry } = require('../dist/nodes/registry');
 
 describe('AutoFlow AI Core Test Suite', () => {
   let db;
@@ -386,4 +387,90 @@ describe('AutoFlow AI Core Test Suite', () => {
     const filterNode = details.nodes.find((n) => n.nodeId === 'filter_node');
     assert.strictEqual(filterNode.outputData[0].length, 1, 'Item should be kept by filter');
   });
+
+  test('9. App Nodes: Telegram, Discord, and Email dispatch correctly', async () => {
+    const executor = new WorkflowExecutor(db);
+
+    const appWorkflow = {
+      id: 'wf-app-nodes-test',
+      name: 'App Nodes Pipeline',
+      nodes: [
+        { id: 'start', name: 'Start', type: 'manual-trigger', position: { x: 0, y: 0 }, parameters: {} },
+        {
+          id: 'tg_node',
+          name: 'Telegram Alert',
+          type: 'telegram',
+          position: { x: 200, y: 0 },
+          parameters: {
+            botToken: 'test-bot-token-999',
+            chatId: '12345678',
+            text: 'AutoFlow operational alert'
+          }
+        },
+        {
+          id: 'dc_node',
+          name: 'Discord Notification',
+          type: 'discord',
+          position: { x: 400, y: 0 },
+          parameters: {
+            webhookUrl: 'https://discord.com/api/webhooks/mock/test',
+            content: 'Pipeline finished',
+            sendEmbed: true,
+            embedTitle: 'Execution Succeeded',
+            embedDescription: 'All test conditions met.'
+          }
+        },
+        {
+          id: 'email_node',
+          name: 'Email Report',
+          type: 'email',
+          position: { x: 600, y: 0 },
+          parameters: {
+            to: 'ops-test@example.com',
+            subject: 'Daily Digest',
+            body: '<p>Report content</p>',
+            sendMode: 'simulated'
+          }
+        }
+      ],
+      connections: [
+        { source: 'Start', sourceOutput: 0, target: 'Telegram Alert', targetInput: 0 },
+        { source: 'Telegram Alert', sourceOutput: 0, target: 'Discord Notification', targetInput: 0 },
+        { source: 'Discord Notification', sourceOutput: 0, target: 'Email Report', targetInput: 0 }
+      ],
+      settings: {},
+      active: false,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    const res = await executor.execute(appWorkflow, { mode: 'manual' });
+    assert.strictEqual(res.status, 'success', `Execution should succeed: ${res.errorMessage}`);
+
+    const details = executor.getExecution(res.id);
+    const tgResult = details.nodes.find((n) => n.nodeId === 'tg_node');
+    assert.ok(tgResult && tgResult.outputData[0][0].json.success);
+    assert.strictEqual(tgResult.outputData[0][0].json.chatId, '12345678');
+
+    const dcResult = details.nodes.find((n) => n.nodeId === 'dc_node');
+    assert.ok(dcResult && dcResult.outputData[0][0].json.success);
+    assert.strictEqual(dcResult.outputData[0][0].json.status, 204);
+
+    const emailResult = details.nodes.find((n) => n.nodeId === 'email_node');
+    assert.ok(emailResult && emailResult.outputData[0][0].json.success);
+    assert.strictEqual(emailResult.outputData[0][0].json.to, 'ops-test@example.com');
+  });
+
+  test('10. Node Registry: Correctly exports all registered nodes including apps', () => {
+    const registry = NodeRegistry.getInstance();
+    const list = registry.list();
+    const types = list.map((n) => n.type);
+
+    assert.ok(types.includes('telegram'), 'Registry should include telegram');
+    assert.ok(types.includes('discord'), 'Registry should include discord');
+    assert.ok(types.includes('email'), 'Registry should include email');
+    assert.ok(types.includes('gemini'), 'Registry should include gemini');
+    assert.ok(types.includes('ai-agent'), 'Registry should include ai-agent');
+  });
 });
+

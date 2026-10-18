@@ -1,0 +1,17 @@
+services:
+  autoflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: autoflow-ai
+    restart: unless-stopped
+    ports:
+      - "3456:3456"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=3456
+      - DB_PATH=/app/data/autoflow.sqlite
+      - NODE_ENV=production
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ENCRYPTION_SECRET=${ENCRYPTION_SECRET:-}

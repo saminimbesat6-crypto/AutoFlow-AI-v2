@@ -1,5 +1,12 @@
+export interface GeminiInlineData {
+  mimeType: string;
+  data: string; // base64 encoded
+}
+
 export interface GeminiMessagePart {
   text?: string;
+  inlineData?: GeminiInlineData;
+  inline_data?: GeminiInlineData;
   functionCall?: {
     name: string;
     args: Record<string, any>;

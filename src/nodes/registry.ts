@@ -13,6 +13,9 @@ import { FilterNode } from './core/filter';
 import { DelayNode } from './core/delay';
 import { CryptoNode } from './core/crypto';
 import { WebhookResponseNode } from './core/webhook-response';
+import { TelegramNode } from './apps/telegram';
+import { DiscordNode } from './apps/discord';
+import { EmailNode } from './apps/email';
 
 export class NodeRegistry {
   private static instance: NodeRegistry;
@@ -45,6 +48,11 @@ export class NodeRegistry {
     this.register(new CodeNode());
     this.register(new CryptoNode());
     this.register(new WebhookResponseNode());
+
+    // App Integrations
+    this.register(new TelegramNode());
+    this.register(new DiscordNode());
+    this.register(new EmailNode());
 
     // AI & Gemini
     this.register(new GeminiNode());
