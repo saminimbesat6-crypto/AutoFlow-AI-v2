@@ -189,4 +189,29 @@ describe('AutoFlow AI Frontend Editor & Mobile Layout Test Suite', () => {
 
     if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
   });
+
+  test('8. Canvas Touch Gestures & SVG Edge Transform Synchronization', () => {
+    assert.ok(canvasJs.includes('isPinching'), 'canvas.js must track pinch state');
+    assert.ok(canvasJs.includes('pinchStartDist'), 'canvas.js must compute pinch distance');
+    assert.ok(canvasJs.includes('zoomToFit('), 'canvas.js must implement zoomToFit()');
+    assert.ok(canvasJs.includes('this.svg.style.transform = transformStr'), 'SVG transform must sync with canvas plane');
+    assert.ok(canvasJs.includes("this.svg.style.transformOrigin = '0 0'"), 'SVG transform origin must match plane origin');
+    assert.ok(htmlContent.includes('id="canvas-zoom-fit-btn"'), 'Toolbar must have Fit button');
+  });
+
+  test('9. Mobile Responsive Layout Constraints: Non-overlapping toolbar & full-width panels', () => {
+    const mobileMediaIdx = cssContent.indexOf('@media (max-width: 768px)');
+    assert.ok(mobileMediaIdx !== -1, 'Must contain 768px media query');
+    const mobileCss = cssContent.slice(mobileMediaIdx);
+
+    // Toolbar single row
+    assert.ok(mobileCss.includes('flex-wrap: nowrap'), 'Mobile toolbar must not wrap onto multiple lines');
+    assert.ok(mobileCss.includes('.desktop-only'), 'Mobile toolbar must suppress desktop-only controls');
+
+    // Debug panel & Drawers full width
+    assert.ok(mobileCss.includes('.debug-panel'), 'Mobile CSS must position debug-panel');
+    assert.ok(mobileCss.includes('left: 0'), 'Debug panel must span from left: 0 on mobile');
+    assert.ok(mobileCss.includes('.debug-content'), 'Debug content must be column-oriented on mobile');
+    assert.ok(mobileCss.includes('100vw'), 'Drawers must be full viewport width on mobile');
+  });
 });

@@ -46,7 +46,9 @@
       </div>
       <input type="text" class="palette-search" id="palette-search" placeholder="Search nodes (e.g. Gemini, HTTP, IF)..." />
       <div class="palette-category-list" id="palette-categories">
-        <!-- Populated dynamically by editor.js -->
+        <div class="palette-loading" id="palette-loading" style="padding: 24px 12px; text-align: center; color: var(--text-muted); font-size: 0.8rem; display: flex; align-items: center; justify-content: center; gap: 8px;">
+          <span class="spinner"></span> Loading node palette...
+        </div>
       </div>
     </aside>
     <!-- Mobile Palette Backdrop -->
@@ -56,16 +58,17 @@
     <div class="canvas-wrapper" id="canvas-wrapper">
       <!-- Floating Canvas Toolbar -->
       <div class="editor-toolbar">
-        <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="toolbar-left-group">
           <button class="btn btn-secondary btn-sm mobile-palette-toggle" id="mobile-palette-btn" title="Open Nodes Palette">📦 Nodes</button>
           <input type="text" class="workflow-name-input" id="workflow-title-input" value="Untitled Workflow" />
           <button class="btn btn-secondary btn-sm" id="workflow-active-toggle">Inactive</button>
         </div>
         <div class="toolbar-buttons">
-          <button class="btn btn-ai-pill btn-sm" id="canvas-ai-copilot-btn">💬 Copilot Side</button>
-          <button class="btn btn-secondary btn-sm" id="canvas-fullscreen-btn" title="Fullscreen view of workflow chart & output">⛶ Fullscreen & Output</button>
-          <button class="btn btn-secondary btn-sm" id="save-workflow-btn">Save</button>
-          <button class="btn btn-primary btn-sm" id="execute-workflow-btn">▶ Test Workflow</button>
+          <button class="btn btn-secondary btn-sm" id="canvas-zoom-fit-btn" title="Zoom to fit workflow">⛶ Fit</button>
+          <button class="btn btn-ai-pill btn-sm desktop-only" id="canvas-ai-copilot-btn">💬 Copilot Side</button>
+          <button class="btn btn-secondary btn-sm desktop-only" id="canvas-fullscreen-btn" title="Fullscreen view of workflow chart & output">⛶ Fullscreen</button>
+          <button class="btn btn-secondary btn-sm" id="save-workflow-btn">💾 Save</button>
+          <button class="btn btn-primary btn-sm" id="execute-workflow-btn">▶ Test</button>
         </div>
       </div>
 

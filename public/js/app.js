@@ -80,6 +80,15 @@ class AutoFlowApp {
       await this.checkAiStatus();
     } catch (err) {
       console.error('App init error:', err);
+      const pal = document.getElementById('palette-categories');
+      if (pal) {
+        pal.innerHTML = `
+          <div style="padding: 24px 12px; text-align: center; color: #ef4444; font-size: 0.8rem;">
+            Failed to load node catalog.<br/>
+            <button class="btn btn-secondary btn-sm" style="margin-top: 10px;" onclick="window.app.loadInitialData()">Retry</button>
+          </div>
+        `;
+      }
     }
   }
 
@@ -98,6 +107,11 @@ class AutoFlowApp {
       if (this.currentWorkflow) {
         this.currentWorkflow.name = e.target.value.trim() || 'Untitled Workflow';
       }
+    });
+
+    // Zoom to Fit Button
+    document.getElementById('canvas-zoom-fit-btn')?.addEventListener('click', () => {
+      this.canvas.zoomToFit();
     });
 
     // Save Workflow Button
@@ -224,6 +238,7 @@ class AutoFlowApp {
     document.getElementById('workflow-title-input').value = workflow.name;
     this.updateActiveToggleUI();
     this.canvas.loadWorkflow(this.currentWorkflow);
+    setTimeout(() => this.canvas.zoomToFit(), 60);
     this.switchView('editor');
   }
 

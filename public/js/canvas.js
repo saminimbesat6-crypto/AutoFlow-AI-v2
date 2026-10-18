@@ -26,6 +26,12 @@ class WorkflowCanvas {
     this.connectSourceOutput = 0;
     this.tempConnectionPath = null;
 
+    // Pinch to Zoom state
+    this.isPinching = false;
+    this.pinchStartDist = 0;
+    this.pinchStartScale = 1.0;
+    this.pinchCenter = { x: 0, y: 0 };
+
     // Callbacks
     this.onNodeSelect = null;
     this.onNodeChange = null;
@@ -97,9 +103,9 @@ class WorkflowCanvas {
       }
     });
 
-    // Touch Support for Mobile Canvas Panning & Dragging
+    // Touch Support for Mobile Canvas: Single-Finger Panning & Two-Finger Pinch-to-Zoom
     this.container.addEventListener('touchstart', (e) => {
-      if (e.touches && e.touches.length === 1) {
+      if (e.touches.length === 1) {
         const touch = e.touches[0];
         if (e.target === this.container || e.target === this.svg || e.target.classList.contains('canvas-plane')) {
           this.isPanning = true;
@@ -108,11 +114,39 @@ class WorkflowCanvas {
           this.container.classList.add('panning');
           this.deselectAll();
         }
+      } else if (e.touches.length === 2) {
+        this.isPinching = true;
+        this.isPanning = false;
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        this.pinchStartDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        this.pinchStartScale = this.scale;
+        this.pinchCenter = {
+          x: (t1.clientX + t2.clientX) / 2,
+          y: (t1.clientY + t2.clientY) / 2
+        };
       }
     }, { passive: true });
 
     window.addEventListener('touchmove', (e) => {
-      if (e.touches && e.touches.length === 1) {
+      if (this.isPinching && e.touches.length === 2) {
+        const t1 = e.touches[0];
+        const t2 = e.touches[1];
+        const currentDist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+        if (this.pinchStartDist > 0) {
+          const factor = currentDist / this.pinchStartDist;
+          const newScale = Math.min(Math.max(this.pinchStartScale * factor, 0.25), 2.5);
+
+          const rect = this.container.getBoundingClientRect();
+          const midX = this.pinchCenter.x - rect.left;
+          const midY = this.pinchCenter.y - rect.top;
+
+          this.panX = midX - (midX - this.panX) * (newScale / this.scale);
+          this.panY = midY - (midY - this.panY) * (newScale / this.scale);
+          this.scale = newScale;
+          this.updateTransform();
+        }
+      } else if (e.touches.length === 1) {
         const touch = e.touches[0];
         if (this.isPanning) {
           this.panX = touch.clientX - this.startX;
@@ -135,17 +169,22 @@ class WorkflowCanvas {
       }
     }, { passive: true });
 
-    window.addEventListener('touchend', () => {
-      if (this.isPanning) {
-        this.isPanning = false;
-        this.container.classList.remove('panning');
+    window.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        this.isPinching = false;
       }
-      if (this.draggingNode) {
-        this.draggingNode = null;
-        if (this.onNodeChange) this.onNodeChange();
-      }
-      if (this.isConnecting) {
-        this.cancelConnecting();
+      if (e.touches.length === 0) {
+        if (this.isPanning) {
+          this.isPanning = false;
+          this.container.classList.remove('panning');
+        }
+        if (this.draggingNode) {
+          this.draggingNode = null;
+          if (this.onNodeChange) this.onNodeChange();
+        }
+        if (this.isConnecting) {
+          this.cancelConnecting();
+        }
       }
     });
 
@@ -189,7 +228,54 @@ class WorkflowCanvas {
   }
 
   updateTransform() {
-    this.plane.style.transform = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
+    const transformStr = `translate(${this.panX}px, ${this.panY}px) scale(${this.scale})`;
+    this.plane.style.transform = transformStr;
+    if (this.svg) {
+      this.svg.style.transform = transformStr;
+      this.svg.style.transformOrigin = '0 0';
+    }
+  }
+
+  zoomToFit() {
+    if (!this.workflow || !this.workflow.nodes || this.workflow.nodes.length === 0) {
+      this.panX = 40;
+      this.panY = 40;
+      this.scale = 1.0;
+      this.updateTransform();
+      return;
+    }
+
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const node of this.workflow.nodes) {
+      const nx = node.position.x;
+      const ny = node.position.y;
+      if (nx < minX) minX = nx;
+      if (ny < minY) minY = ny;
+      if (nx + 220 > maxX) maxX = nx + 220;
+      if (ny + 90 > maxY) maxY = ny + 90;
+    }
+
+    const rect = this.container.getBoundingClientRect();
+    const padding = 50;
+    const availWidth = Math.max(rect.width - padding * 2, 100);
+    const availHeight = Math.max(rect.height - padding * 2, 100);
+
+    const graphWidth = Math.max(maxX - minX, 1);
+    const graphHeight = Math.max(maxY - minY, 1);
+
+    const scaleX = availWidth / graphWidth;
+    const scaleY = availHeight / graphHeight;
+    const fitScale = Math.min(Math.max(Math.min(scaleX, scaleY), 0.35), 1.15);
+
+    this.scale = fitScale;
+    this.panX = Math.round((rect.width - graphWidth * fitScale) / 2 - minX * fitScale);
+    this.panY = Math.round((rect.height - graphHeight * fitScale) / 2 - minY * fitScale);
+
+    this.updateTransform();
   }
 
   render() {
