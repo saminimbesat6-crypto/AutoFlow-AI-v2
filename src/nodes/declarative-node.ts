@@ -319,8 +319,8 @@ export class DeclarativeNode extends BaseNode {
       }
 
       // Construct final URL with tenant/subdomain interpolation if applicable
-      let base = this.manifest.baseURL;
-      base = base.replace(/\{(\w+)\}/g, (_match, pName) => {
+      let base: string = context.getNodeParameter('_baseUrlOverride', i, undefined) || this.manifest.baseURL;
+      base = base.replace(/\{(\w+)\}/g, (_match: string, pName: string) => {
         const val = context.getNodeParameter(pName, i, undefined) ?? items[i].json?.[pName] ?? '';
         return String(val);
       });
@@ -360,24 +360,27 @@ export class DeclarativeNode extends BaseNode {
       if (op.itemsPath && op.itemsPath.trim()) {
         const parts = op.itemsPath.split('.');
         let current = responseJson;
+        let pathFound = true;
         for (const p of parts) {
           if (current && typeof current === 'object' && p in current) {
             current = current[p];
           } else {
-            current = [];
+            pathFound = false;
             break;
           }
         }
-        if (Array.isArray(current)) {
+        if (pathFound && Array.isArray(current) && current.length > 0) {
           for (const subItem of current) {
-            results.push({ json: subItem, pairedItem: i });
+            results.push({ json: typeof subItem === 'object' && subItem !== null ? subItem : { value: subItem }, pairedItem: i });
           }
+        } else if (pathFound && current !== undefined && current !== null && !Array.isArray(current)) {
+          results.push({ json: typeof current === 'object' ? current : { value: current }, pairedItem: i });
         } else {
-          results.push({ json: current || responseJson, pairedItem: i });
+          results.push({ json: responseJson, pairedItem: i });
         }
       } else if (Array.isArray(responseJson)) {
         for (const subItem of responseJson) {
-          results.push({ json: subItem, pairedItem: i });
+          results.push({ json: typeof subItem === 'object' && subItem !== null ? subItem : { value: subItem }, pairedItem: i });
         }
       } else {
         results.push({ json: responseJson, pairedItem: i });

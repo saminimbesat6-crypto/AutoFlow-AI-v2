@@ -157,9 +157,9 @@ export const WAVE20_INTEGRATION_MANIFESTS: DeclarativeManifest[] = [
   },
 
   {
-    type: 'deepseek',
-    name: 'DeepSeek AI',
-    description: 'High-capability reasoning and coding LLM inference via DeepSeek API',
+    type: 'deepseek_coder',
+    name: 'DeepSeek Coder',
+    description: 'AI code generation, infilling, and software refactoring via DeepSeek Coder API',
     category: 'ai',
     icon: 'code',
     color: '#0066cc',
