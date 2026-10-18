@@ -30,10 +30,18 @@
 - **Multi-Modal Gemini Vision & Document Analysis**:
   - Integrated `GeminiNode` supporting `gemini-3.8-flash` and `gemini-3.8-pro`.
   - Native multi-modal vision inputs: pass base64 image strings, data URLs, or remote image/PDF links to extract receipts, analyze documents, or read diagrams.
-- **Dedicated App Connectors**:
+- **Omnichannel App & Social Connectors (n8n Parity)**:
+  - **WhatsApp Business Node**: Send text messages, media files (images, audio, PDFs), and pre-approved business templates via Meta WhatsApp Cloud API.
+  - **Instagram for Business Node**: Automated Instagram Direct Messages (DMs), post/reel comment auto-replies, and photo publishing.
   - **Telegram Node**: Send markdown messages, alerts, and notifications to Telegram chats and channels.
-  - **Discord Node**: Send messages and rich embed cards via Discord Webhooks.
+  - **Discord Node**: Send webhook messages and rich embed cards with customizable colors and metadata.
+  - **Slack Node**: Send channel messages and Block Kit rich cards via Slack incoming webhooks.
   - **Email / SMTP Node**: Transactional emails, HTML digests, and alert dispatches with sandbox simulation and custom SMTP support.
+  - **Inbound Email Trigger**: Automated trigger parsing incoming emails (sender, subject, body, and attachments).
+  - **Google Sheets Node**: Append rows, read ranges, and update spreadsheets directly in Google Sheets.
+  - **Airtable Node**: Create, search, and update records in Airtable bases.
+  - **GitHub Node**: Automate issue creation, pull request comments, and repository event dispatching.
+  - **Stripe Node**: Automate customer creation, hosted payment checkout links, and subscription billing.
 - **Bidirectional n8n Compatibility Adapter**: Export and import workflows seamlessly between AutoFlow AI and standard n8n JSON formats.
 - **Embedded Database Architecture**: Powered by Node 24's native `node:sqlite` (`DatabaseSync`), requiring zero external database setup and zero native compiler toolchains.
 - **Enterprise-Grade Security**: Credentials encrypted at rest using **AES-256-GCM** with unique initialization vectors (IV) and authentication tags.
@@ -60,9 +68,9 @@ autoflow-ai/
 │   ├── nodes/
 │   │   ├── base.ts            # Node definition contracts
 │   │   ├── registry.ts        # Dynamic node registry
-│   │   ├── triggers/          # Manual, Webhook, Schedule triggers
+│   │   ├── triggers/          # Manual, Webhook, Schedule, Inbound Email triggers
 │   │   ├── core/              # HTTP, IF Condition, Filter, Delay, Crypto, Code, Merge, Set
-│   │   ├── apps/              # Telegram, Discord, Email / SMTP connectors
+│   │   ├── apps/              # WhatsApp, Instagram, Telegram, Discord, Slack, Sheets, Airtable, GitHub, Stripe, Email
 │   │   └── ai/                # Gemini Model client, Gemini Node, AI Agent Node
 │   ├── credentials/
 │   │   └── manager.ts         # AES-256-GCM encrypted credential storage

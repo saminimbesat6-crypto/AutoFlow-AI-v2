@@ -6,7 +6,7 @@ export class TelegramNode extends BaseNode {
   type = 'telegram';
   name = 'Telegram';
   description = 'Sends messages, alerts, and Markdown notifications to Telegram chats or channels';
-  category = 'action' as const;
+  category = 'app' as const;
   icon = 'send';
   color = '#229ED9'; // Telegram Blue
 

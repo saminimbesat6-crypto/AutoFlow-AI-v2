@@ -6,7 +6,7 @@ export class EmailNode extends BaseNode {
   type = 'email';
   name = 'Email / SMTP';
   description = 'Sends transactional emails, alert notices, and HTML digests';
-  category = 'action' as const;
+  category = 'app' as const;
   icon = 'mail';
   color = '#ea4335'; // Gmail / Email Red
 

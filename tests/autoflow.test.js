@@ -469,8 +469,149 @@ describe('AutoFlow AI Core Test Suite', () => {
     assert.ok(types.includes('telegram'), 'Registry should include telegram');
     assert.ok(types.includes('discord'), 'Registry should include discord');
     assert.ok(types.includes('email'), 'Registry should include email');
+    assert.ok(types.includes('whatsapp'), 'Registry should include whatsapp');
+    assert.ok(types.includes('instagram'), 'Registry should include instagram');
+    assert.ok(types.includes('slack'), 'Registry should include slack');
+    assert.ok(types.includes('google-sheets'), 'Registry should include google-sheets');
+    assert.ok(types.includes('airtable'), 'Registry should include airtable');
+    assert.ok(types.includes('github'), 'Registry should include github');
+    assert.ok(types.includes('stripe'), 'Registry should include stripe');
+    assert.ok(types.includes('email-trigger'), 'Registry should include email-trigger');
     assert.ok(types.includes('gemini'), 'Registry should include gemini');
     assert.ok(types.includes('ai-agent'), 'Registry should include ai-agent');
+  });
+
+  test('11. Social & Workspace App Integrations: WhatsApp, Instagram, Slack, Sheets, Airtable, GitHub, Stripe', async () => {
+    const executor = new WorkflowExecutor(db);
+
+    const socialWorkflow = {
+      id: 'wf-social-apps-test',
+      name: 'Omnichannel Social & Workspace Suite',
+      nodes: [
+        { id: 'node_em_in', name: 'Email Inbound', type: 'email-trigger', position: { x: 0, y: 0 }, parameters: {} },
+        {
+          id: 'node_wa',
+          name: 'WhatsApp Dispatch',
+          type: 'whatsapp',
+          position: { x: 200, y: 0 },
+          parameters: {
+            phoneNumberId: '100123456',
+            accessToken: 'test-token',
+            recipient: '+14155552671',
+            message: 'Hello from AutoFlow!'
+          }
+        },
+        {
+          id: 'node_ig',
+          name: 'Instagram Reply',
+          type: 'instagram',
+          position: { x: 400, y: 0 },
+          parameters: {
+            accessToken: 'test-token',
+            instagramAccountId: '178414',
+            recipientId: '179999',
+            message: 'Thanks for reaching out!'
+          }
+        },
+        {
+          id: 'node_slack',
+          name: 'Slack Notification',
+          type: 'slack',
+          position: { x: 600, y: 0 },
+          parameters: {
+            webhookUrl: 'https://hooks.slack.com/services/mock/T00/B00/X',
+            text: 'Automated omnichannel alert'
+          }
+        },
+        {
+          id: 'node_sheets',
+          name: 'Google Sheets Log',
+          type: 'google-sheets',
+          position: { x: 800, y: 0 },
+          parameters: {
+            spreadsheetId: 'sheet-123',
+            accessToken: 'test-token',
+            rowValues: ['AutoFlow', 'Success']
+          }
+        },
+        {
+          id: 'node_airtable',
+          name: 'Airtable Record',
+          type: 'airtable',
+          position: { x: 1000, y: 0 },
+          parameters: {
+            baseId: 'app123',
+            tableName: 'Customers',
+            apiKey: 'test-pat',
+            fieldsJson: '{"Name": "Test User"}'
+          }
+        },
+        {
+          id: 'node_github',
+          name: 'GitHub Issue',
+          type: 'github',
+          position: { x: 1200, y: 0 },
+          parameters: {
+            token: 'test-token',
+            owner: 'saminimbesat6-crypto',
+            repo: 'AutoFlow-AI-v2',
+            title: 'Automated Test Issue'
+          }
+        },
+        {
+          id: 'node_stripe',
+          name: 'Stripe Customer',
+          type: 'stripe',
+          position: { x: 1400, y: 0 },
+          parameters: {
+            apiKey: 'test-key',
+            customerEmail: 'test-customer@example.com'
+          }
+        }
+      ],
+      connections: [
+        { source: 'Email Inbound', sourceOutput: 0, target: 'WhatsApp Dispatch', targetInput: 0 },
+        { source: 'WhatsApp Dispatch', sourceOutput: 0, target: 'Instagram Reply', targetInput: 0 },
+        { source: 'Instagram Reply', sourceOutput: 0, target: 'Slack Notification', targetInput: 0 },
+        { source: 'Slack Notification', sourceOutput: 0, target: 'Google Sheets Log', targetInput: 0 },
+        { source: 'Google Sheets Log', sourceOutput: 0, target: 'Airtable Record', targetInput: 0 },
+        { source: 'Airtable Record', sourceOutput: 0, target: 'GitHub Issue', targetInput: 0 },
+        { source: 'GitHub Issue', sourceOutput: 0, target: 'Stripe Customer', targetInput: 0 }
+      ],
+      settings: {},
+      active: false,
+      createdAt: '',
+      updatedAt: ''
+    };
+
+    const res = await executor.execute(socialWorkflow, { mode: 'manual' });
+    assert.strictEqual(res.status, 'success', `Execution should succeed: ${res.errorMessage}`);
+
+    const details = executor.getExecution(res.id);
+    assert.strictEqual(details.nodes.length, 8);
+
+    const wa = details.nodes.find((n) => n.nodeId === 'node_wa');
+    assert.ok(wa && wa.outputData[0][0].json.success);
+    assert.strictEqual(wa.outputData[0][0].json.recipient, '14155552671');
+
+    const ig = details.nodes.find((n) => n.nodeId === 'node_ig');
+    assert.ok(ig && ig.outputData[0][0].json.success);
+
+    const slack = details.nodes.find((n) => n.nodeId === 'node_slack');
+    assert.ok(slack && slack.outputData[0][0].json.success);
+
+    const sheets = details.nodes.find((n) => n.nodeId === 'node_sheets');
+    assert.ok(sheets && sheets.outputData[0][0].json.success);
+
+    const airtable = details.nodes.find((n) => n.nodeId === 'node_airtable');
+    assert.ok(airtable && airtable.outputData[0][0].json.success);
+
+    const github = details.nodes.find((n) => n.nodeId === 'node_github');
+    assert.ok(github && github.outputData[0][0].json.success);
+
+    const stripe = details.nodes.find((n) => n.nodeId === 'node_stripe');
+    assert.ok(stripe && stripe.outputData[0][0].json.success);
+    assert.strictEqual(stripe.outputData[0][0].json.email, 'test-customer@example.com');
   });
 });
 

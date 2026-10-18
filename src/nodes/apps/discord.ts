@@ -6,7 +6,7 @@ export class DiscordNode extends BaseNode {
   type = 'discord';
   name = 'Discord';
   description = 'Sends messages, alerts, and rich embed cards to Discord channels via Webhooks';
-  category = 'action' as const;
+  category = 'app' as const;
   icon = 'message-square';
   color = '#5865F2'; // Discord Blurple
 

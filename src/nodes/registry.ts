@@ -13,9 +13,17 @@ import { FilterNode } from './core/filter';
 import { DelayNode } from './core/delay';
 import { CryptoNode } from './core/crypto';
 import { WebhookResponseNode } from './core/webhook-response';
+import { EmailTriggerNode } from './triggers/email-trigger';
 import { TelegramNode } from './apps/telegram';
 import { DiscordNode } from './apps/discord';
 import { EmailNode } from './apps/email';
+import { WhatsAppNode } from './apps/whatsapp';
+import { InstagramNode } from './apps/instagram';
+import { SlackNode } from './apps/slack';
+import { GoogleSheetsNode } from './apps/google-sheets';
+import { AirtableNode } from './apps/airtable';
+import { GitHubNode } from './apps/github';
+import { StripeNode } from './apps/stripe';
 
 export class NodeRegistry {
   private static instance: NodeRegistry;
@@ -37,6 +45,7 @@ export class NodeRegistry {
     this.register(new ManualTriggerNode());
     this.register(new WebhookTriggerNode());
     this.register(new ScheduleTriggerNode());
+    this.register(new EmailTriggerNode());
 
     // Core Actions & Logic
     this.register(new HttpRequestNode());
@@ -49,10 +58,17 @@ export class NodeRegistry {
     this.register(new CryptoNode());
     this.register(new WebhookResponseNode());
 
-    // App Integrations
+    // Apps & Social Connectors
     this.register(new TelegramNode());
     this.register(new DiscordNode());
     this.register(new EmailNode());
+    this.register(new WhatsAppNode());
+    this.register(new InstagramNode());
+    this.register(new SlackNode());
+    this.register(new GoogleSheetsNode());
+    this.register(new AirtableNode());
+    this.register(new GitHubNode());
+    this.register(new StripeNode());
 
     // AI & Gemini
     this.register(new GeminiNode());

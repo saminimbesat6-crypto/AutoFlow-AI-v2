@@ -1,7 +1,7 @@
 import { DataItem, NodeOutput, PortDefinition, PropertyDefinition, WorkflowNode } from '../types/workflow';
 import { NodeExecutionContext } from '../engine/context';
 
-export type NodeCategory = 'trigger' | 'core' | 'action' | 'ai' | 'transform';
+export type NodeCategory = 'trigger' | 'core' | 'action' | 'ai' | 'transform' | 'app';
 
 export interface INodeDefinition {
   type: string;

@@ -66,8 +66,9 @@ class WorkflowEditor {
 
     const categories = {
       trigger: { title: 'Triggers', items: [] },
-      core: { title: 'Core Logic', items: [] },
+      app: { title: 'Apps & Social Media', items: [] },
       ai: { title: 'Gemini AI', items: [] },
+      core: { title: 'Core Logic', items: [] },
       action: { title: 'Actions & Network', items: [] },
       transform: { title: 'Data Transformation', items: [] }
     };
