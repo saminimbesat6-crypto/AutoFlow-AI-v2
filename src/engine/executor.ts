@@ -104,13 +104,15 @@ export class WorkflowExecutor {
       startNodes = rootNodes.length > 0 ? rootNodes : [workflow.nodes[0]];
     }
 
+    const nodePortInputsMap = new Map<string, Map<number, DataItem[]>>();
+
     // Seed initial data for start nodes
     for (const startNode of startNodes) {
-      if (options.initialData && options.initialData.length > 0) {
-        nodeInputsMap.set(startNode.id, options.initialData);
-      } else {
-        nodeInputsMap.set(startNode.id, []);
-      }
+      const initData = (options.initialData && options.initialData.length > 0) ? options.initialData : [];
+      nodeInputsMap.set(startNode.id, initData);
+      const startPortMap = new Map<number, DataItem[]>();
+      startPortMap.set(0, initData);
+      nodePortInputsMap.set(startNode.id, startPortMap);
     }
 
     let overallStatus: 'success' | 'error' | 'waiting' | 'cancelled' = 'success';
@@ -197,18 +199,34 @@ export class WorkflowExecutor {
       let output: NodeOutput | null = null;
       let nodeError: string | null = null;
       const maxTries = node.retryOnFail ? (node.maxTries || 3) : 1;
+      const portMap = nodePortInputsMap.get(node.id);
+      const inputsByPort: DataItem[][] = [];
+      if (portMap) {
+        const portIndices = Array.from(portMap.keys());
+        const maxPort = portIndices.length > 0 ? Math.max(...portIndices) : 0;
+        for (let p = 0; p <= maxPort; p++) {
+          inputsByPort[p] = portMap.get(p) || [];
+        }
+      }
+
       const waitMs = (node.waitBetweenTries || 1) * 1000;
 
-      for (let attempt = 1; attempt <= maxTries; attempt++) {
-        try {
-          const nodeContext = context.createNodeContext(node, currentInput, 0);
-          output = await nodeDef.execute(nodeContext);
-          nodeError = null;
-          break;
-        } catch (err: any) {
-          nodeError = err.message || String(err);
-          if (attempt < maxTries) {
-            await new Promise((r) => setTimeout(r, waitMs));
+      // If node has pinnedData, use pinned dataset directly as node output (n8n Pin Data semantics)
+      if (node.pinnedData && node.pinnedData.length > 0) {
+        output = [node.pinnedData];
+        nodeError = null;
+      } else {
+        for (let attempt = 1; attempt <= maxTries; attempt++) {
+          try {
+            const nodeContext = context.createNodeContext(node, currentInput, 0, inputsByPort);
+            output = await nodeDef.execute(nodeContext);
+            nodeError = null;
+            break;
+          } catch (err: any) {
+            nodeError = err.message || String(err);
+            if (attempt < maxTries) {
+              await new Promise((r) => setTimeout(r, waitMs));
+            }
           }
         }
       }
@@ -305,6 +323,15 @@ export class WorkflowExecutor {
           const edges = graph.getSuccessors(node.id);
           for (const edge of edges) {
             if (edge.sourceOutput === 0) {
+              const inIndex = edge.targetInput || 0;
+              let targetPortMap = nodePortInputsMap.get(edge.target);
+              if (!targetPortMap) {
+                targetPortMap = new Map<number, DataItem[]>();
+                nodePortInputsMap.set(edge.target, targetPortMap);
+              }
+              const existingPortData = targetPortMap.get(inIndex) || [];
+              targetPortMap.set(inIndex, [...existingPortData, fallbackItem]);
+
               const existing = nodeInputsMap.get(edge.target) || [];
               nodeInputsMap.set(edge.target, [...existing, fallbackItem]);
               if (!executionQueue.includes(edge.target)) {
@@ -366,9 +393,18 @@ export class WorkflowExecutor {
         const edges = graph.getSuccessors(node.id);
         for (const edge of edges) {
           const outIndex = edge.sourceOutput;
+          const inIndex = edge.targetInput || 0;
           const outputDataForPort = output[outIndex] || [];
 
           if (outputDataForPort.length > 0) {
+            let targetPortMap = nodePortInputsMap.get(edge.target);
+            if (!targetPortMap) {
+              targetPortMap = new Map<number, DataItem[]>();
+              nodePortInputsMap.set(edge.target, targetPortMap);
+            }
+            const existingPortData = targetPortMap.get(inIndex) || [];
+            targetPortMap.set(inIndex, [...existingPortData, ...outputDataForPort]);
+
             const existing = nodeInputsMap.get(edge.target) || [];
             nodeInputsMap.set(edge.target, [...existing, ...outputDataForPort]);
 

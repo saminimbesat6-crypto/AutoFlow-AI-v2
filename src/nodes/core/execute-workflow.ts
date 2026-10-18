@@ -49,7 +49,10 @@ export class ExecuteWorkflowNode extends BaseNode {
     }
 
     const db = getDatabase();
-    const row = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflowId) as any;
+    let row = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflowId) as any;
+    if (!row) {
+      row = db.prepare('SELECT * FROM workflows WHERE name = ?').get(workflowId) as any;
+    }
 
     if (!row) {
       // For mock/test environments
@@ -80,7 +83,7 @@ export class ExecuteWorkflowNode extends BaseNode {
     };
 
     // Lazily require WorkflowExecutor to avoid circular dependency
-    const { WorkflowExecutor } = require('../engine/executor');
+    const { WorkflowExecutor } = require('../../engine/executor');
     const executor = new WorkflowExecutor(db);
 
     const result = await executor.execute(subWorkflow, {

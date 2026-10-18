@@ -16,6 +16,8 @@ class WorkflowEditor {
     this.debugInputData = document.getElementById('debug-input-data');
     this.debugOutputData = document.getElementById('debug-output-data');
     this.closeDebugBtn = document.getElementById('close-debug-btn');
+    this.pinDataBtn = document.getElementById('pin-data-btn');
+    this.testStepBtn = document.getElementById('test-step-btn');
 
     this.sidebarEl = document.getElementById('editor-sidebar');
     this.closePaletteBtn = document.getElementById('close-palette-btn');
@@ -39,6 +41,13 @@ class WorkflowEditor {
   initEvents() {
     this.closeDrawerBtn.addEventListener('click', () => this.closeDrawer());
     this.closeDebugBtn.addEventListener('click', () => this.closeDebug());
+
+    if (this.pinDataBtn) {
+      this.pinDataBtn.addEventListener('click', () => this.togglePinData());
+    }
+    if (this.testStepBtn) {
+      this.testStepBtn.addEventListener('click', () => this.executeCurrentNodeStep());
+    }
 
     if (this.mobilePaletteBtn) {
       this.mobilePaletteBtn.addEventListener('click', () => this.openMobilePalette());
@@ -81,9 +90,9 @@ class WorkflowEditor {
 
     const categories = {
       trigger: { title: 'Triggers', items: [] },
-      app: { title: 'Apps & Social Media', items: [] },
-      ai: { title: 'Gemini AI', items: [] },
-      core: { title: 'Core Logic', items: [] },
+      app: { title: 'Apps, Databases & Cloud', items: [] },
+      ai: { title: 'AI & Multi-Model', items: [] },
+      core: { title: 'Core Logic & Control Flow', items: [] },
       action: { title: 'Actions & Network', items: [] },
       transform: { title: 'Data Transformation', items: [] }
     };
@@ -492,6 +501,75 @@ class WorkflowEditor {
     } else {
       this.debugInputData.textContent = '(This node was not reached during the last execution)';
       this.debugOutputData.textContent = '(No output)';
+    }
+    this.updatePinButtonUI();
+  }
+
+  updatePinButtonUI() {
+    if (!this.pinDataBtn || !this.currentNode) return;
+    const isPinned = this.currentNode.pinnedData && this.currentNode.pinnedData.length > 0;
+    this.pinDataBtn.textContent = isPinned ? '📌 Unpin Data' : '📌 Pin Data';
+    this.pinDataBtn.className = isPinned ? 'btn btn-warning btn-sm' : 'btn btn-secondary btn-sm';
+  }
+
+  async togglePinData() {
+    if (!this.currentNode) return;
+    const isPinned = this.currentNode.pinnedData && this.currentNode.pinnedData.length > 0;
+
+    if (isPinned) {
+      delete this.currentNode.pinnedData;
+      if (window.app?.currentWorkflow?.id) {
+        try {
+          await this.api(`/api/workflows/${window.app.currentWorkflow.id}/nodes/${this.currentNode.id}/unpin`, { method: 'POST' });
+        } catch {}
+      }
+      this.updatePinButtonUI();
+      this.canvas.render();
+      window.app?.toast(`Data unpinned from ${this.currentNode.name}`, 'info');
+    } else {
+      const nodeRecord = this.lastExecutionDetails?.nodes?.find(
+        (nr) => nr.nodeId === this.currentNode.id || nr.nodeName === this.currentNode.name
+      );
+      const dataToPin = (nodeRecord?.outputData && nodeRecord.outputData[0]) ? nodeRecord.outputData[0] : [{ json: { sample: true, timestamp: new Date().toISOString() } }];
+      this.currentNode.pinnedData = dataToPin;
+      if (window.app?.currentWorkflow?.id) {
+        try {
+          await this.api(`/api/workflows/${window.app.currentWorkflow.id}/nodes/${this.currentNode.id}/pin`, {
+            method: 'POST',
+            body: JSON.stringify({ pinnedData: dataToPin })
+          });
+        } catch {}
+      }
+      this.updatePinButtonUI();
+      this.canvas.render();
+      window.app?.toast(`Data pinned to ${this.currentNode.name} (📌)`, 'info');
+    }
+  }
+
+  async executeCurrentNodeStep() {
+    if (!this.currentNode || !window.app?.currentWorkflow?.id) return;
+    this.testStepBtn.disabled = true;
+    this.testStepBtn.textContent = '⏳ Testing...';
+
+    try {
+      const res = await this.api(`/api/workflows/${window.app.currentWorkflow.id}/nodes/${this.currentNode.id}/execute-step`, {
+        method: 'POST',
+        body: JSON.stringify({ inputData: this.currentNode.pinnedData || undefined })
+      });
+
+      if (res.success) {
+        this.debugOutputData.textContent = JSON.stringify(res.outputData, null, 2);
+        this.debugOutputData.style.color = '#cbd5e1';
+        this.debugPanel.classList.add('open');
+        window.app?.toast(`Step "${this.currentNode.name}" executed in ${res.duration}ms`, 'info');
+      }
+    } catch (err) {
+      this.debugOutputData.textContent = `Execution Error:\n${err.message}`;
+      this.debugOutputData.style.color = '#ef4444';
+      this.debugPanel.classList.add('open');
+    } finally {
+      this.testStepBtn.disabled = false;
+      this.testStepBtn.textContent = '▶ Test Step';
     }
   }
 

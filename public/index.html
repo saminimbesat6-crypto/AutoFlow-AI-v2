@@ -167,7 +167,11 @@
       <div class="debug-panel" id="debug-panel">
         <div class="debug-header">
           <div style="font-weight: 600; font-size: 0.88rem;" id="debug-node-title">Execution Data</div>
-          <button class="btn-icon" id="close-debug-btn">✕</button>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button class="btn btn-secondary btn-sm" id="pin-data-btn" title="Pin this node's output data for rapid downstream testing">📌 Pin Data</button>
+            <button class="btn btn-primary btn-sm" id="test-step-btn" title="Execute only this node in isolation">▶ Test Step</button>
+            <button class="btn-icon" id="close-debug-btn">✕</button>
+          </div>
         </div>
         <div class="debug-content">
           <div class="debug-column">

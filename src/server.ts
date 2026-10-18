@@ -19,6 +19,8 @@ import { createCredentialRouter } from './api/routes/credential-routes';
 import { createNodeTypeRouter } from './api/routes/node-type-routes';
 import { createAiAssistantRouter } from './api/routes/ai-assistant-routes';
 import { createTemplateRoutes } from './api/routes/template-routes';
+import { ExecutionQueueManager } from './scaling/queue-manager';
+import { createQueueRouter } from './api/routes/queue-routes';
 
 export function createApp() {
   const app = express();
@@ -37,6 +39,8 @@ export function createApp() {
   const webhookManager = new WebhookManager(db);
   const schedulerManager = new SchedulerManager(db);
   const credentialsManager = new CredentialsManager(db);
+  const queueManager = ExecutionQueueManager.getInstance();
+  queueManager.init(executor, workflowRepo);
 
   // Sync active webhooks & schedules
   webhookManager.syncAllActive();
@@ -59,6 +63,7 @@ export function createApp() {
   app.use('/api/node-types', createNodeTypeRouter());
   app.use('/api/ai/assistant', createAiAssistantRouter(credentialsManager));
   app.use('/api/templates', createTemplateRoutes(workflowRepo));
+  app.use('/api/queue', createQueueRouter(queueManager));
 
   // Webhook Receiver Endpoint (supports all HTTP methods)
   app.all('/webhook/:path(*)', async (req: Request, res: Response) => {

@@ -233,5 +233,100 @@ export function createWorkflowRouter(
     }
   });
 
+  // Pin data on a specific node for rapid canvas iteration
+  router.post('/:id/nodes/:nodeId/pin', (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const nodeId = String(req.params.nodeId);
+      const { pinnedData } = req.body;
+      const workflow = repo.getById(id);
+      if (!workflow) {
+        return res.status(404).json({ success: false, error: 'Workflow not found' });
+      }
+      const node = workflow.nodes.find((n) => n.id === nodeId);
+      if (!node) {
+        return res.status(404).json({ success: false, error: 'Node not found in workflow' });
+      }
+      node.pinnedData = Array.isArray(pinnedData) ? pinnedData : [{ json: pinnedData || {} }];
+      repo.update(id, workflow);
+      res.json({
+        success: true,
+        message: `Data successfully pinned to node "${node.name}"`,
+        pinnedData: node.pinnedData
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Unpin data from a specific node
+  router.post('/:id/nodes/:nodeId/unpin', (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const nodeId = String(req.params.nodeId);
+      const workflow = repo.getById(id);
+      if (!workflow) {
+        return res.status(404).json({ success: false, error: 'Workflow not found' });
+      }
+      const node = workflow.nodes.find((n) => n.id === nodeId);
+      if (!node) {
+        return res.status(404).json({ success: false, error: 'Node not found in workflow' });
+      }
+      delete node.pinnedData;
+      repo.update(id, workflow);
+      res.json({ success: true, message: `Data unpinned from node "${node.name}"` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Execute single step / node in isolation using inputData or pinnedData
+  router.post('/:id/nodes/:nodeId/execute-step', async (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const nodeId = String(req.params.nodeId);
+      const workflow = repo.getById(id);
+      if (!workflow) {
+        return res.status(404).json({ success: false, error: 'Workflow not found' });
+      }
+      const node = workflow.nodes.find((n) => n.id === nodeId);
+      if (!node) {
+        return res.status(404).json({ success: false, error: 'Node not found in workflow' });
+      }
+
+      // Priority: request body inputData > node.pinnedData > [{ json: {} }]
+      let inputData = req.body?.inputData;
+      if (!inputData || inputData.length === 0) {
+        inputData = node.pinnedData || [{ json: {} }];
+      }
+
+      const { NodeRegistry } = require('../../nodes/registry');
+      const { ExecutionContext } = require('../../engine/context');
+      const registry = NodeRegistry.getInstance();
+      const nodeDef = registry.get(node.type);
+      if (!nodeDef) {
+        return res.status(400).json({ success: false, error: `Unknown node type: ${node.type}` });
+      }
+
+      const execContext = new ExecutionContext();
+      const nodeContext = execContext.createNodeContext(node, inputData, 0);
+
+      const start = Date.now();
+      const output = await nodeDef.execute(nodeContext);
+      const duration = Date.now() - start;
+
+      res.json({
+        success: true,
+        nodeId: node.id,
+        nodeName: node.name,
+        inputData,
+        outputData: output,
+        duration
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   return router;
 }

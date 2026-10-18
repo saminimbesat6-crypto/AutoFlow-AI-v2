@@ -20,6 +20,8 @@ import { WebhookResponseNode } from './core/webhook-response';
 import { ExecuteWorkflowNode } from './core/execute-workflow';
 import { ReadWriteFileNode } from './core/file';
 import { ExtractFromFileNode } from './core/extract-file';
+import { DateTimeNode } from './core/date-time';
+import { AggregateNode } from './core/aggregate';
 
 import { TelegramNode } from './apps/telegram';
 import { DiscordNode } from './apps/discord';
@@ -31,9 +33,15 @@ import { GoogleSheetsNode } from './apps/google-sheets';
 import { AirtableNode } from './apps/airtable';
 import { GitHubNode } from './apps/github';
 import { StripeNode } from './apps/stripe';
+import { PostgresNode } from './apps/postgres';
+import { RedisNode } from './apps/redis';
+import { AwsS3Node } from './apps/aws-s3';
+import { NotionNode } from './apps/notion';
 
 import { GeminiNode } from './ai/gemini-node';
 import { AiAgentNode } from './ai/ai-agent-node';
+import { OpenAiNode } from './ai/openai-node';
+import { CustomNodeLoader } from './custom-loader';
 
 export class NodeRegistry {
   private static instance: NodeRegistry;
@@ -46,6 +54,10 @@ export class NodeRegistry {
   static getInstance(): NodeRegistry {
     if (!NodeRegistry.instance) {
       NodeRegistry.instance = new NodeRegistry();
+      // Deferred custom nodes init to prevent constructor re-entrancy
+      setImmediate(() => {
+        NodeRegistry.instance.initCustomNodes();
+      });
     }
     return NodeRegistry.instance;
   }
@@ -74,8 +86,10 @@ export class NodeRegistry {
     this.register(new ExecuteWorkflowNode());
     this.register(new ReadWriteFileNode());
     this.register(new ExtractFromFileNode());
+    this.register(new DateTimeNode());
+    this.register(new AggregateNode());
 
-    // Apps & Social Connectors
+    // Apps, Databases & Cloud Connectors
     this.register(new TelegramNode());
     this.register(new DiscordNode());
     this.register(new EmailNode());
@@ -86,10 +100,23 @@ export class NodeRegistry {
     this.register(new AirtableNode());
     this.register(new GitHubNode());
     this.register(new StripeNode());
+    this.register(new PostgresNode());
+    this.register(new RedisNode());
+    this.register(new AwsS3Node());
+    this.register(new NotionNode());
 
-    // AI & Gemini
+    // AI & Multi-Model Providers
     this.register(new GeminiNode());
     this.register(new AiAgentNode());
+    this.register(new OpenAiNode());
+  }
+
+  private initCustomNodes(): void {
+    try {
+      CustomNodeLoader.getInstance().loadAll().catch((err) => {
+        console.warn('[NodeRegistry] Non-blocking notice: Custom nodes load deferred:', err.message);
+      });
+    } catch {}
   }
 
   register(node: BaseNode): void {

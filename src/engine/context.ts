@@ -5,6 +5,8 @@ import { ExpressionSandbox } from './sandbox';
 export interface NodeExecutionContext {
   node: WorkflowNode;
   inputData: DataItem[];
+  inputsByPort?: DataItem[][];
+  getInputData(inputIndex?: number): DataItem[];
   getNodeParameter(paramName: string, itemIndex?: number, defaultValue?: any): any;
   getCredentials<T = Record<string, any>>(credentialType: string): T | null;
   evaluateExpression(expression: string, itemIndex?: number): any;
@@ -49,7 +51,8 @@ export class ExecutionContext {
   createNodeContext(
     node: WorkflowNode,
     inputData: DataItem[],
-    itemIndex = 0
+    itemIndex = 0,
+    inputsByPort: DataItem[][] = []
   ): NodeExecutionContext {
     const self = this;
 
@@ -57,6 +60,14 @@ export class ExecutionContext {
       node,
       inputData,
       itemIndex,
+      inputsByPort,
+
+      getInputData(inputIndex = 0): DataItem[] {
+        if (inputsByPort && inputsByPort[inputIndex] !== undefined && inputsByPort[inputIndex].length > 0) {
+          return inputsByPort[inputIndex];
+        }
+        return inputData;
+      },
 
       getNodeParameter(paramName: string, index = itemIndex, defaultValue = undefined) {
         const rawValue = node.parameters?.[paramName];
@@ -99,7 +110,7 @@ export class ExecutionContext {
       itemData: currentItem,
       itemIndex,
       allInputData: currentItems,
-      nodeOutputs: this.nodeOutputs,
+      nodeOutputs: this.nodeOutputs as any,
       workflowId: this.workflowId,
       workflowName: this.workflowName,
       executionId: this.executionId,

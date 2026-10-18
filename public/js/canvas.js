@@ -312,9 +312,9 @@ class WorkflowCanvas {
     nodeEl.style.left = `${node.position.x}px`;
     nodeEl.style.top = `${node.position.y}px`;
 
-    // Header color bar
     const categoryColor = nodeDef.color || '#3b82f6';
     const disabledBadge = node.disabled ? `<span class="disabled-pill">Disabled</span>` : '';
+    const pinBadge = (node.pinnedData && node.pinnedData.length > 0) ? `<span class="pinned-pill" title="Data is pinned on this node">📌 Pinned</span>` : '';
 
     nodeEl.innerHTML = `
       <div class="node-header" style="border-top: 3px solid ${categoryColor}">
@@ -322,6 +322,7 @@ class WorkflowCanvas {
           <div class="node-icon" style="background: ${categoryColor}">⚡</div>
           <div class="node-name" title="${node.name}">${node.name}</div>
         </div>
+        ${pinBadge}
         ${disabledBadge}
       </div>
       <div class="node-type-label">${nodeDef.name}</div>
