@@ -1,0 +1,54 @@
+import { DeclarativeManifest } from '../declarative-node';
+import { INTEGRATION_MANIFESTS } from './manifests';
+import { EXTENDED_INTEGRATION_MANIFESTS } from './manifests-extended';
+import { WAVE3_INTEGRATION_MANIFESTS } from './manifests-wave3';
+import { WAVE4_INTEGRATION_MANIFESTS } from './manifests-wave4';
+import { WAVE5_INTEGRATION_MANIFESTS } from './manifests-wave5';
+import { WAVE6_INTEGRATION_MANIFESTS } from './manifests-wave6';
+import { WAVE7_INTEGRATION_MANIFESTS } from './manifests-wave7';
+import { WAVE8_INTEGRATION_MANIFESTS } from './manifests-wave8';
+import { WAVE9_INTEGRATION_MANIFESTS } from './manifests-wave9';
+import { WAVE10_INTEGRATION_MANIFESTS } from './manifests-wave10';
+import { WAVE11_INTEGRATION_MANIFESTS } from './manifests-wave11';
+import { WAVE12_INTEGRATION_MANIFESTS } from './manifests-wave12';
+import { WAVE13_INTEGRATION_MANIFESTS } from './manifests-wave13';
+import { WAVE14_INTEGRATION_MANIFESTS } from './manifests-wave14';
+import { WAVE15_INTEGRATION_MANIFESTS } from './manifests-wave15';
+import { WAVE16_INTEGRATION_MANIFESTS } from './manifests-wave16';
+import { WAVE17_INTEGRATION_MANIFESTS } from './manifests-wave17';
+import { WAVE18_INTEGRATION_MANIFESTS } from './manifests-wave18';
+import { WAVE19_INTEGRATION_MANIFESTS } from './manifests-wave19';
+import { WAVE20_INTEGRATION_MANIFESTS } from './manifests-wave20';
+import { WAVE21_INTEGRATION_MANIFESTS } from './manifests-wave21';
+import { WAVE22_INTEGRATION_MANIFESTS } from './manifests-wave22';
+import { WAVE23_INTEGRATION_MANIFESTS } from './manifests-wave23';
+import { WAVE24_INTEGRATION_MANIFESTS } from './manifests-wave24';
+import { WAVE25_INTEGRATION_MANIFESTS } from './manifests-wave25';
+
+export const ALL_INTEGRATION_MANIFESTS: DeclarativeManifest[] = [
+  ...INTEGRATION_MANIFESTS,
+  ...EXTENDED_INTEGRATION_MANIFESTS,
+  ...WAVE3_INTEGRATION_MANIFESTS,
+  ...WAVE4_INTEGRATION_MANIFESTS,
+  ...WAVE5_INTEGRATION_MANIFESTS,
+  ...WAVE6_INTEGRATION_MANIFESTS,
+  ...WAVE7_INTEGRATION_MANIFESTS,
+  ...WAVE8_INTEGRATION_MANIFESTS,
+  ...WAVE9_INTEGRATION_MANIFESTS,
+  ...WAVE10_INTEGRATION_MANIFESTS,
+  ...WAVE11_INTEGRATION_MANIFESTS,
+  ...WAVE12_INTEGRATION_MANIFESTS,
+  ...WAVE13_INTEGRATION_MANIFESTS,
+  ...WAVE14_INTEGRATION_MANIFESTS,
+  ...WAVE15_INTEGRATION_MANIFESTS,
+  ...WAVE16_INTEGRATION_MANIFESTS,
+  ...WAVE17_INTEGRATION_MANIFESTS,
+  ...WAVE18_INTEGRATION_MANIFESTS,
+  ...WAVE19_INTEGRATION_MANIFESTS,
+  ...WAVE20_INTEGRATION_MANIFESTS,
+  ...WAVE21_INTEGRATION_MANIFESTS,
+  ...WAVE22_INTEGRATION_MANIFESTS,
+  ...WAVE23_INTEGRATION_MANIFESTS,
+  ...WAVE24_INTEGRATION_MANIFESTS,
+  ...WAVE25_INTEGRATION_MANIFESTS
+];

@@ -90,7 +90,11 @@ class WorkflowEditor {
 
     const categories = {
       trigger: { title: 'Triggers', items: [] },
-      app: { title: 'Apps, Databases & Cloud', items: [] },
+      app: { title: 'Enterprise Apps & SaaS', items: [] },
+      database: { title: 'Databases & Storage', items: [] },
+      cloud: { title: 'DevOps & Cloud Infrastructure', items: [] },
+      communication: { title: 'Communication & Messaging', items: [] },
+      social: { title: 'Social & Media Platforms', items: [] },
       ai: { title: 'AI & Multi-Model', items: [] },
       core: { title: 'Core Logic & Control Flow', items: [] },
       action: { title: 'Actions & Network', items: [] },

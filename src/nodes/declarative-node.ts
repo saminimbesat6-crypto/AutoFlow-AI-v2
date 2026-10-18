@@ -318,8 +318,15 @@ export class DeclarativeNode extends BaseNode {
         requestBody = JSON.stringify(bodyObj);
       }
 
-      // Construct final URL
-      const base = this.manifest.baseURL.endsWith('/') ? this.manifest.baseURL.slice(0, -1) : this.manifest.baseURL;
+      // Construct final URL with tenant/subdomain interpolation if applicable
+      let base = this.manifest.baseURL;
+      base = base.replace(/\{(\w+)\}/g, (_match, pName) => {
+        const val = context.getNodeParameter(pName, i, undefined) ?? items[i].json?.[pName] ?? '';
+        return String(val);
+      });
+      if (base.endsWith('/')) {
+        base = base.slice(0, -1);
+      }
       const pathPart = targetPath.startsWith('/') ? targetPath : `/${targetPath}`;
       const urlObj = new URL(`${base}${pathPart}`);
 

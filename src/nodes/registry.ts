@@ -44,8 +44,7 @@ import { AiAgentNode } from './ai/ai-agent-node';
 import { OpenAiNode } from './ai/openai-node';
 import { CustomNodeLoader } from './custom-loader';
 import { DeclarativeNode } from './declarative-node';
-import { INTEGRATION_MANIFESTS } from './integrations/manifests';
-import { EXTENDED_INTEGRATION_MANIFESTS } from './integrations/manifests-extended';
+import { ALL_INTEGRATION_MANIFESTS } from './integrations';
 
 export class NodeRegistry {
   private static instance: NodeRegistry;
@@ -115,11 +114,8 @@ export class NodeRegistry {
     this.register(new AiAgentNode());
     this.register(new OpenAiNode());
 
-    // Enterprise Integrations Pack (n8n Parity Waves)
-    for (const manifest of INTEGRATION_MANIFESTS) {
-      this.register(new DeclarativeNode(manifest));
-    }
-    for (const manifest of EXTENDED_INTEGRATION_MANIFESTS) {
+    // Enterprise Integrations Pack (Full n8n Parity Catalog: 400+ Nodes)
+    for (const manifest of ALL_INTEGRATION_MANIFESTS) {
       this.register(new DeclarativeNode(manifest));
     }
   }

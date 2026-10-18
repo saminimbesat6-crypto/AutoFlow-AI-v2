@@ -4,8 +4,8 @@ const http = require('node:http');
 
 const { NodeRegistry } = require('../dist/nodes/registry');
 const { DeclarativeNode } = require('../dist/nodes/declarative-node');
+const { ALL_INTEGRATION_MANIFESTS } = require('../dist/nodes/integrations');
 const { INTEGRATION_MANIFESTS } = require('../dist/nodes/integrations/manifests');
-const { EXTENDED_INTEGRATION_MANIFESTS } = require('../dist/nodes/integrations/manifests-extended');
 const { ExecutionContext } = require('../dist/engine/context');
 
 describe('AutoFlow AI Declarative Integrations & Enterprise Ecosystem Test Suite', () => {
@@ -75,9 +75,9 @@ describe('AutoFlow AI Declarative Integrations & Enterprise Ecosystem Test Suite
     if (mockServer) mockServer.close();
   });
 
-  test('1. Registry Catalog: Successfully loads 100+ production-grade integration and utility nodes', () => {
+  test('1. Registry Catalog: Successfully loads 400+ production-grade integration and utility nodes', () => {
     const list = registry.list();
-    assert.ok(list.length >= 100, `Expected at least 100 nodes, got ${list.length}`);
+    assert.ok(list.length >= 400, `Expected at least 400 nodes for full n8n parity, got ${list.length}`);
 
     // Verify key CRM nodes
     assert.ok(registry.get('hubspot'), 'HubSpot node must be registered');
@@ -120,15 +120,23 @@ describe('AutoFlow AI Declarative Integrations & Enterprise Ecosystem Test Suite
     assert.ok(registry.get('perplexity'), 'Perplexity node must be registered');
     assert.ok(registry.get('pinecone'), 'Pinecone node must be registered');
     assert.ok(registry.get('qdrant'), 'Qdrant node must be registered');
+
+    // Verify Cloud Infrastructure & Security additions
+    assert.ok(registry.get('clickhouse'), 'ClickHouse node must be registered');
+    assert.ok(registry.get('snowflake'), 'Snowflake node must be registered');
+    assert.ok(registry.get('hashicorp_vault'), 'Vault node must be registered');
+    assert.ok(registry.get('okta_users'), 'Okta node must be registered');
+    assert.ok(registry.get('auth0_users'), 'Auth0 node must be registered');
+    assert.ok(registry.get('bannerbear'), 'Bannerbear node must be registered');
+    assert.ok(registry.get('openweathermap'), 'OpenWeatherMap node must be registered');
   });
 
-  test('2. Manifest Structure Integrity: All manifests specify valid resources, operations, and HTTP methods', () => {
-    const allManifests = [...INTEGRATION_MANIFESTS, ...EXTENDED_INTEGRATION_MANIFESTS];
-    assert.ok(allManifests.length >= 50, 'Must have at least 50 integration manifests');
+  test('2. Manifest Structure Integrity: All 350+ manifests specify valid resources, operations, and HTTP methods', () => {
+    assert.ok(ALL_INTEGRATION_MANIFESTS.length >= 350, `Must have at least 350 integration manifests, got ${ALL_INTEGRATION_MANIFESTS.length}`);
 
     const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
 
-    for (const m of allManifests) {
+    for (const m of ALL_INTEGRATION_MANIFESTS) {
       assert.ok(m.type, 'Manifest must have a unique type');
       assert.ok(m.name, `Manifest ${m.type} must have a name`);
       assert.ok(m.baseURL, `Manifest ${m.type} must specify a baseURL`);
