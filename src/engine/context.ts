@@ -1,5 +1,7 @@
 import { DataItem, NodeOutput, WorkflowNode } from '../types/workflow';
 import { CredentialsManager } from '../credentials/manager';
+import { OAuth2Manager } from '../credentials/oauth2-manager';
+import { StaticDataManager } from './static-data-manager';
 import { ExpressionSandbox } from './sandbox';
 
 export interface NodeExecutionContext {
@@ -9,6 +11,8 @@ export interface NodeExecutionContext {
   getInputData(inputIndex?: number): DataItem[];
   getNodeParameter(paramName: string, itemIndex?: number, defaultValue?: any): any;
   getCredentials<T = Record<string, any>>(credentialType: string): T | null;
+  getOAuth2Token(credentialType?: string): Promise<string | null>;
+  getWorkflowStaticData(type?: 'node' | 'global'): Record<string, any>;
   evaluateExpression(expression: string, itemIndex?: number): any;
   getAllNodeData(nodeName: string): DataItem[] | null;
   itemIndex: number;
@@ -17,15 +21,24 @@ export interface NodeExecutionContext {
 export class ExecutionContext {
   private nodeOutputs: Map<string, NodeOutput> = new Map();
   private credentialsManager: CredentialsManager;
+  public oauth2Manager: OAuth2Manager;
+  public staticDataManager: StaticDataManager;
   private workflowEnv: Record<string, string>;
   public workflowId?: string;
   public workflowName?: string;
   public executionId?: string;
   public executionMode?: string;
 
-  constructor(credentialsManager?: CredentialsManager, env?: Record<string, string>) {
+  constructor(
+    credentialsManager?: CredentialsManager,
+    env?: Record<string, string>,
+    staticDataManager?: StaticDataManager,
+    oauth2Manager?: OAuth2Manager
+  ) {
     this.credentialsManager = credentialsManager || new CredentialsManager();
     this.workflowEnv = env || (process.env as Record<string, string>);
+    this.staticDataManager = staticDataManager || new StaticDataManager();
+    this.oauth2Manager = oauth2Manager || new OAuth2Manager(undefined, this.credentialsManager);
   }
 
   setNodeOutput(nodeNameOrId: string, output: NodeOutput): void {
@@ -86,6 +99,32 @@ export class ExecutionContext {
         return (cred?.data as T) || null;
       },
 
+      async getOAuth2Token(credentialType = 'oauth2'): Promise<string | null> {
+        let credId = node.credentials?.[credentialType];
+        if (!credId && node.credentials) {
+          // Look for any credential assigned that matches oauth2 or ends with oauth2
+          for (const [key, id] of Object.entries(node.credentials)) {
+            if (key.toLowerCase().includes('oauth') || key === 'oauth2') {
+              credId = id;
+              break;
+            }
+          }
+        }
+        if (!credId) return null;
+        try {
+          return await self.oauth2Manager.getValidAccessToken(credId);
+        } catch (err) {
+          console.error(`[ExecutionContext] Failed to get OAuth2 token for ${credId}:`, err);
+          throw err;
+        }
+      },
+
+      getWorkflowStaticData(type: 'node' | 'global' = 'node'): Record<string, any> {
+        const wfId = self.workflowId || 'transient-execution';
+        const nodeId = type === 'node' ? node.id : '__global__';
+        return self.staticDataManager.getStaticData(wfId, nodeId);
+      },
+
       evaluateExpression(expr: string, index = itemIndex): any {
         return self.evaluateExpression(expr, inputData, index, self);
       },
@@ -115,7 +154,8 @@ export class ExecutionContext {
       workflowName: this.workflowName,
       executionId: this.executionId,
       executionMode: this.executionMode,
-      env: this.workflowEnv
+      env: this.workflowEnv,
+      staticData: this.staticDataManager.getStaticData(this.workflowId || 'transient-execution', '__global__')
     });
   }
 }

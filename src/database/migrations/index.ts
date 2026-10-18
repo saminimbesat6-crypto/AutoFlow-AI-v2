@@ -104,4 +104,32 @@ export function runMigrations(db: DatabaseSync): void {
     const insertStmt2 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
     insertStmt2.run(2, new Date().toISOString());
   }
+
+  // Migration 3: OAuth2 States & Workflow Static Data
+  const check3 = stmt.get(3);
+  if (!check3) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS oauth2_states (
+        state TEXT PRIMARY KEY,
+        credential_id TEXT,
+        config TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_oauth2_states_expires ON oauth2_states(expires_at);
+
+      CREATE TABLE IF NOT EXISTS workflow_static_data (
+        workflow_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        data TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (workflow_id, node_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_workflow_static_data_wf ON workflow_static_data(workflow_id);
+    `);
+
+    const insertStmt3 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+    insertStmt3.run(3, new Date().toISOString());
+  }
 }
+

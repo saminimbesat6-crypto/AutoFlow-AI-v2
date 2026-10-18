@@ -328,5 +328,19 @@ export function createWorkflowRouter(
     }
   });
 
+  // Reset static deduplication data for a node
+  router.post('/:id/nodes/:nodeId/reset-static-data', (req: Request, res: Response) => {
+    try {
+      const id = String(req.params.id);
+      const nodeId = String(req.params.nodeId);
+      const { StaticDataManager } = require('../../engine/static-data-manager');
+      const staticDataManager = new StaticDataManager();
+      staticDataManager.clearStaticData(id, nodeId);
+      res.json({ success: true, message: `Static data reset for node ${nodeId}` });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   return router;
 }

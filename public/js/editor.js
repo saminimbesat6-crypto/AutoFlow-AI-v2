@@ -363,6 +363,39 @@ class WorkflowEditor {
         container.appendChild(group);
       }
     }
+
+    // Polling Trigger Stateful Controls
+    if (node.type === 'polling-trigger') {
+      const pollBox = document.createElement('div');
+      pollBox.style.cssText = 'background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 12px; margin-top: 14px;';
+      pollBox.innerHTML = `
+        <div style="font-weight: 600; color: #10b981; margin-bottom: 6px; font-size: 0.85rem;">🔄 Deduplication State</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 10px;">Tracks seen item IDs and timestamps across runs. Clear state to re-test initial run detection.</div>
+        <button type="button" class="btn btn-secondary" id="btn-reset-poll-state" style="width: 100%; font-size: 0.8rem; padding: 6px 12px;">
+          Clear State & Reset
+        </button>
+      `;
+      const btnReset = pollBox.querySelector('#btn-reset-poll-state');
+      if (btnReset) {
+        btnReset.addEventListener('click', async () => {
+          try {
+            btnReset.disabled = true;
+            btnReset.textContent = 'Resetting...';
+            const wfId = this.canvas.workflow?.id || 'dev';
+            await fetch(`/api/workflows/${wfId}/nodes/${node.id}/reset-static-data`, { method: 'POST' });
+            btnReset.textContent = '✓ State Cleared!';
+            setTimeout(() => {
+              btnReset.disabled = false;
+              btnReset.textContent = 'Clear State & Reset';
+            }, 2000);
+          } catch (err) {
+            btnReset.disabled = false;
+            btnReset.textContent = 'Error Resetting';
+          }
+        });
+      }
+      container.appendChild(pollBox);
+    }
   }
 
   renderSettingsTab(container, node) {

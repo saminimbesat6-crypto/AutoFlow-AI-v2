@@ -101,6 +101,9 @@ export class WorkflowRepository {
   }
 
   delete(id: string): boolean {
+    try {
+      this.db.prepare('DELETE FROM workflow_static_data WHERE workflow_id = ?').run(id);
+    } catch {}
     const stmt = this.db.prepare('DELETE FROM workflows WHERE id = ?');
     stmt.run(id);
     return true;

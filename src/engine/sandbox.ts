@@ -11,6 +11,7 @@ export interface SandboxContextOptions {
   executionId?: string;
   executionMode?: string;
   env?: Record<string, string>;
+  staticData?: Record<string, any>;
 }
 
 export class ExpressionSandbox {
@@ -80,6 +81,7 @@ export class ExpressionSandbox {
         id: options.workflowId || 'wf-dev',
         name: options.workflowName || 'Workflow'
       },
+      $staticData: options.staticData || {},
       // Safe built-in utilities
       Math,
       Date,

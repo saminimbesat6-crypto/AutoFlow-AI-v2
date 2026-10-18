@@ -179,6 +179,102 @@ class AutoFlowApp {
       this.createNewWorkflow();
     });
 
+    // Type change toggle in Credential modal
+    const credTypeSelect = document.getElementById('cred-type');
+    const credUserGroup = document.getElementById('cred-user-group');
+    const credOAuthGroup = document.getElementById('cred-oauth2-group');
+    const credSecretGroup = document.getElementById('cred-secret-group');
+    const saveCredBtn = document.getElementById('save-cred-btn');
+    const oauthProviderSelect = document.getElementById('cred-oauth-provider');
+    const oauthCustomUrls = document.getElementById('cred-oauth-custom-urls');
+
+    if (credTypeSelect) {
+      credTypeSelect.addEventListener('change', () => {
+        const type = credTypeSelect.value;
+        if (credUserGroup) credUserGroup.style.display = type === 'basic_auth' ? 'block' : 'none';
+        if (credOAuthGroup) credOAuthGroup.style.display = type === 'oauth2' ? 'block' : 'none';
+        if (credSecretGroup) credSecretGroup.style.display = type === 'oauth2' ? 'none' : 'block';
+        if (saveCredBtn) saveCredBtn.style.display = type === 'oauth2' ? 'none' : 'inline-block';
+      });
+    }
+
+    if (oauthProviderSelect) {
+      oauthProviderSelect.addEventListener('change', () => {
+        if (oauthCustomUrls) {
+          oauthCustomUrls.style.display = oauthProviderSelect.value === 'custom' ? 'block' : 'none';
+        }
+      });
+    }
+
+    // Connect with OAuth2 Button
+    const oauthConnectBtn = document.getElementById('cred-oauth-connect-btn');
+    if (oauthConnectBtn) {
+      oauthConnectBtn.addEventListener('click', async () => {
+        const name = document.getElementById('cred-name').value.trim();
+        const provider = document.getElementById('cred-oauth-provider').value;
+        const clientId = document.getElementById('cred-oauth-client-id').value.trim();
+        const clientSecret = document.getElementById('cred-oauth-client-secret').value.trim();
+        const scope = document.getElementById('cred-oauth-scope')?.value.trim();
+        const authUrl = document.getElementById('cred-oauth-auth-url')?.value.trim();
+        const tokenUrl = document.getElementById('cred-oauth-token-url')?.value.trim();
+
+        if (!name) {
+          this.toast('Please enter a credential name', 'error');
+          return;
+        }
+        if (!clientId || !clientSecret) {
+          this.toast('Client ID and Client Secret are required', 'error');
+          return;
+        }
+
+        try {
+          oauthConnectBtn.disabled = true;
+          oauthConnectBtn.textContent = 'Opening Login Window...';
+
+          const res = await this.api('/api/credentials/oauth2/start', {
+            method: 'POST',
+            body: JSON.stringify({
+              name,
+              provider,
+              clientId,
+              clientSecret,
+              scope: scope || undefined,
+              authUrl: authUrl || undefined,
+              tokenUrl: tokenUrl || undefined
+            })
+          });
+
+          if (!res || !res.data?.authUrl) {
+            throw new Error('Failed to retrieve authorization URL');
+          }
+
+          const popup = window.open(res.data.authUrl, 'autoflow_oauth_popup', 'width=620,height=720,menubar=no,toolbar=no');
+
+          const onOAuthMessage = (event) => {
+            if (event.data?.type === 'OAUTH2_AUTH_COMPLETE') {
+              window.removeEventListener('message', onOAuthMessage);
+              oauthConnectBtn.disabled = false;
+              oauthConnectBtn.textContent = '🔗 Connect Account via OAuth2';
+
+              if (event.data.success) {
+                this.toast('Account connected successfully via OAuth2!', 'success');
+                document.getElementById('credential-modal').classList.remove('open');
+                this.loadCredentialsList();
+              } else {
+                this.toast('OAuth2 failed: ' + (event.data.message || 'Access denied'), 'error');
+              }
+            }
+          };
+
+          window.addEventListener('message', onOAuthMessage);
+        } catch (err) {
+          oauthConnectBtn.disabled = false;
+          oauthConnectBtn.textContent = '🔗 Connect Account via OAuth2';
+          this.toast(err.message, 'error');
+        }
+      });
+    }
+
     // New Credential Button (Credentials View)
     document.getElementById('new-credential-btn').addEventListener('click', () => {
       document.getElementById('credential-modal').classList.add('open');
@@ -200,6 +296,7 @@ class AutoFlowApp {
 
       let payloadData = {};
       if (type === 'gemini_api_key') payloadData = { apiKey: keyOrToken };
+      else if (type === 'openai_api_key') payloadData = { apiKey: keyOrToken };
       else if (type === 'bearer_token') payloadData = { token: keyOrToken };
       else if (type === 'basic_auth') {
         const user = document.getElementById('cred-user')?.value || 'admin';

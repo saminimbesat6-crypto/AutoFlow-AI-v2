@@ -14,6 +14,8 @@ import { ExecutionContext } from './context';
 import { WorkflowGraph } from './graph';
 import { NodeRegistry } from '../nodes/registry';
 import { CredentialsManager } from '../credentials/manager';
+import { OAuth2Manager } from '../credentials/oauth2-manager';
+import { StaticDataManager } from './static-data-manager';
 
 export interface ExecuteOptions {
   mode?: ExecutionMode;
@@ -81,7 +83,9 @@ export class WorkflowExecutor {
       return failedRecord;
     }
 
-    const context = new ExecutionContext(this.credentialsManager);
+    const staticDataManager = new StaticDataManager(this.db);
+    const oauth2Manager = new OAuth2Manager(this.db, this.credentialsManager);
+    const context = new ExecutionContext(this.credentialsManager, undefined, staticDataManager, oauth2Manager);
     context.workflowId = workflow.id;
     context.workflowName = workflow.name;
     context.executionId = executionId;
@@ -221,6 +225,7 @@ export class WorkflowExecutor {
             const nodeContext = context.createNodeContext(node, currentInput, 0, inputsByPort);
             output = await nodeDef.execute(nodeContext);
             nodeError = null;
+            context.staticDataManager.saveStaticData(workflow.id, node.id);
             break;
           } catch (err: any) {
             nodeError = err.message || String(err);

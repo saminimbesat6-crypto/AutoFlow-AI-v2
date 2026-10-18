@@ -286,15 +286,53 @@
           <label class="form-label">Type</label>
           <select id="cred-type" class="form-control">
             <option value="gemini_api_key">Google Gemini API Key</option>
+            <option value="openai_api_key">OpenAI API Key</option>
+            <option value="oauth2">OAuth2 Account (Google, GitHub, Slack, Notion...)</option>
             <option value="bearer_token">Bearer Token</option>
             <option value="basic_auth">Basic Auth (Username / Password)</option>
           </select>
+        </div>
+        <div id="cred-oauth2-group" style="display: none; background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.25); border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+          <div class="form-group">
+            <label class="form-label">OAuth2 Provider</label>
+            <select id="cred-oauth-provider" class="form-control">
+              <option value="google">Google (Drive, Sheets, Gmail)</option>
+              <option value="github">GitHub</option>
+              <option value="slack">Slack</option>
+              <option value="notion">Notion</option>
+              <option value="microsoft">Microsoft 365 / Azure</option>
+              <option value="discord">Discord</option>
+              <option value="spotify">Spotify</option>
+              <option value="custom">Custom RFC 6749 Provider</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client ID</label>
+            <input type="text" id="cred-oauth-client-id" class="form-control" placeholder="OAuth Client ID" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Client Secret</label>
+            <input type="password" id="cred-oauth-client-secret" class="form-control" placeholder="OAuth Client Secret" />
+          </div>
+          <div class="form-group" id="cred-oauth-custom-urls" style="display: none;">
+            <label class="form-label">Authorization URL</label>
+            <input type="text" id="cred-oauth-auth-url" class="form-control" placeholder="https://provider.com/oauth/authorize" />
+            <label class="form-label" style="margin-top: 8px;">Token URL</label>
+            <input type="text" id="cred-oauth-token-url" class="form-control" placeholder="https://provider.com/oauth/token" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Scope (optional)</label>
+            <input type="text" id="cred-oauth-scope" class="form-control" placeholder="Default scopes used if empty" />
+          </div>
+          <button type="button" class="btn btn-primary" id="cred-oauth-connect-btn" style="width: 100%; margin-top: 6px;">
+            🔗 Connect Account via OAuth2
+          </button>
         </div>
         <div class="form-group" id="cred-user-group" style="display: none;">
           <label class="form-label">Username</label>
           <input type="text" id="cred-user" class="form-control" placeholder="admin" />
         </div>
-        <div class="form-group">
+        <div class="form-group" id="cred-secret-group">
           <label class="form-label">Secret Value / API Key / Password</label>
           <input type="password" id="cred-secret" class="form-control" placeholder="Enter secret (stored AES-256 encrypted)" />
         </div>

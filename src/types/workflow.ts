@@ -86,7 +86,7 @@ export interface DataItem {
 
 export type NodeOutput = DataItem[][]; // array of outputs (for branching: output[0] = true branch, output[1] = false branch)
 
-export type ExecutionMode = 'manual' | 'webhook' | 'schedule' | 'test' | 'error' | 'subworkflow';
+export type ExecutionMode = 'manual' | 'webhook' | 'schedule' | 'poll' | 'test' | 'error' | 'subworkflow';
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'error' | 'waiting' | 'cancelled';
 
 export interface ExecutionRecord {

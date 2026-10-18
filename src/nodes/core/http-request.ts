@@ -47,6 +47,7 @@ export class HttpRequestNode extends BaseNode {
       options: [
         { name: 'None', value: 'none' },
         { name: 'Bearer Token', value: 'bearerToken' },
+        { name: 'OAuth2 Credential', value: 'oAuth2' },
         { name: 'Basic Auth', value: 'basicAuth' },
         { name: 'Header Auth', value: 'headerAuth' }
       ]
@@ -157,6 +158,9 @@ export class HttpRequestNode extends BaseNode {
       if (authType === 'bearerToken') {
         const cred = context.getCredentials<{ token?: string }>('bearer_token');
         if (cred?.token) headers['Authorization'] = `Bearer ${cred.token}`;
+      } else if (authType === 'oAuth2' || authType === 'oauth2') {
+        const token = await context.getOAuth2Token('oauth2');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
       } else if (authType === 'basicAuth') {
         const cred = context.getCredentials<{ user?: string; password?: string }>('basic_auth');
         if (cred?.user) {

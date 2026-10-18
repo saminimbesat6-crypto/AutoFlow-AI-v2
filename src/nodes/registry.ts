@@ -4,6 +4,7 @@ import { WebhookTriggerNode } from './triggers/webhook-trigger';
 import { ScheduleTriggerNode } from './triggers/schedule-trigger';
 import { EmailTriggerNode } from './triggers/email-trigger';
 import { ErrorTriggerNode } from './triggers/error-trigger';
+import { PollingTriggerNode } from './triggers/polling-trigger';
 
 import { HttpRequestNode } from './core/http-request';
 import { IfConditionNode } from './core/if-condition';
@@ -69,6 +70,7 @@ export class NodeRegistry {
     this.register(new ScheduleTriggerNode());
     this.register(new EmailTriggerNode());
     this.register(new ErrorTriggerNode());
+    this.register(new PollingTriggerNode());
 
     // Core Control Flow & Execution Logic
     this.register(new HttpRequestNode());
