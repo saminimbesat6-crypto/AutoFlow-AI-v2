@@ -17,6 +17,11 @@ class WorkflowEditor {
     this.debugOutputData = document.getElementById('debug-output-data');
     this.closeDebugBtn = document.getElementById('close-debug-btn');
 
+    this.sidebarEl = document.getElementById('editor-sidebar');
+    this.closePaletteBtn = document.getElementById('close-palette-btn');
+    this.mobilePaletteBtn = document.getElementById('mobile-palette-btn');
+    this.sidebarBackdrop = document.getElementById('sidebar-backdrop');
+
     this.currentNode = null;
     this.nodeTypes = [];
     this.credentials = [];
@@ -34,6 +39,16 @@ class WorkflowEditor {
   initEvents() {
     this.closeDrawerBtn.addEventListener('click', () => this.closeDrawer());
     this.closeDebugBtn.addEventListener('click', () => this.closeDebug());
+
+    if (this.mobilePaletteBtn) {
+      this.mobilePaletteBtn.addEventListener('click', () => this.openMobilePalette());
+    }
+    if (this.closePaletteBtn) {
+      this.closePaletteBtn.addEventListener('click', () => this.closeMobilePalette());
+    }
+    if (this.sidebarBackdrop) {
+      this.sidebarBackdrop.addEventListener('click', () => this.closeMobilePalette());
+    }
 
     this.deleteNodeBtn.addEventListener('click', () => {
       if (this.currentNode) {
@@ -106,7 +121,18 @@ class WorkflowEditor {
     }
   }
 
+  openMobilePalette() {
+    if (this.sidebarEl) this.sidebarEl.classList.add('open');
+    if (this.sidebarBackdrop) this.sidebarBackdrop.classList.add('open');
+  }
+
+  closeMobilePalette() {
+    if (this.sidebarEl) this.sidebarEl.classList.remove('open');
+    if (this.sidebarBackdrop) this.sidebarBackdrop.classList.remove('open');
+  }
+
   addNodeToCanvas(nodeType) {
+    this.closeMobilePalette();
     const nodeDef = this.nodeTypes.find((nt) => nt.type === nodeType);
     if (!nodeDef) return;
 
@@ -432,9 +458,6 @@ class WorkflowEditor {
     notesText.addEventListener('input', (e) => {
       node.notes = e.target.value;
     });
-  }
-
-    this.nodeDrawer.classList.add('open');
   }
 
   closeDrawer() {

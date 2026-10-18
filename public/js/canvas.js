@@ -97,6 +97,58 @@ class WorkflowCanvas {
       }
     });
 
+    // Touch Support for Mobile Canvas Panning & Dragging
+    this.container.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        const touch = e.touches[0];
+        if (e.target === this.container || e.target === this.svg || e.target.classList.contains('canvas-plane')) {
+          this.isPanning = true;
+          this.startX = touch.clientX - this.panX;
+          this.startY = touch.clientY - this.panY;
+          this.container.classList.add('panning');
+          this.deselectAll();
+        }
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        const touch = e.touches[0];
+        if (this.isPanning) {
+          this.panX = touch.clientX - this.startX;
+          this.panY = touch.clientY - this.startY;
+          this.updateTransform();
+        } else if (this.draggingNode) {
+          const mouseCanvas = this.screenToCanvas(touch.clientX, touch.clientY);
+          const node = this.workflow.nodes.find((n) => n.id === this.draggingNode.id);
+          if (node) {
+            node.position.x = Math.round(mouseCanvas.x - this.dragOffsetX);
+            node.position.y = Math.round(mouseCanvas.y - this.dragOffsetY);
+            this.updateNodePosition(node);
+            this.renderConnections();
+          }
+        } else if (this.isConnecting && this.tempConnectionPath) {
+          const mouseCanvas = this.screenToCanvas(touch.clientX, touch.clientY);
+          const sourcePos = this.getSourcePortPosition(this.connectSourceNode, this.connectSourceOutput);
+          this.updateTempConnection(sourcePos.x, sourcePos.y, mouseCanvas.x, mouseCanvas.y);
+        }
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', () => {
+      if (this.isPanning) {
+        this.isPanning = false;
+        this.container.classList.remove('panning');
+      }
+      if (this.draggingNode) {
+        this.draggingNode = null;
+        if (this.onNodeChange) this.onNodeChange();
+      }
+      if (this.isConnecting) {
+        this.cancelConnecting();
+      }
+    });
+
     // Zooming via Wheel
     this.container.addEventListener('wheel', (e) => {
       e.preventDefault();
@@ -221,6 +273,13 @@ class WorkflowCanvas {
         }
       });
 
+      port.addEventListener('touchend', (e) => {
+        e.stopPropagation();
+        if (this.isConnecting && this.connectSourceNode) {
+          this.completeConnection(this.connectSourceNode, this.connectSourceOutput, node, idx);
+        }
+      });
+
       portsContainer.appendChild(port);
     });
 
@@ -240,6 +299,11 @@ class WorkflowCanvas {
         this.startConnecting(node, idx);
       });
 
+      port.addEventListener('touchstart', (e) => {
+        e.stopPropagation();
+        this.startConnecting(node, idx);
+      }, { passive: true });
+
       portsContainer.appendChild(port);
     });
 
@@ -255,6 +319,19 @@ class WorkflowCanvas {
       this.dragOffsetX = mouseCanvas.x - node.position.x;
       this.dragOffsetY = mouseCanvas.y - node.position.y;
     });
+
+    nodeEl.addEventListener('touchstart', (e) => {
+      if (e.target.classList.contains('node-port')) return;
+      if (e.touches && e.touches.length === 1) {
+        const touch = e.touches[0];
+        this.selectNode(node.id);
+
+        this.draggingNode = node;
+        const mouseCanvas = this.screenToCanvas(touch.clientX, touch.clientY);
+        this.dragOffsetX = mouseCanvas.x - node.position.x;
+        this.dragOffsetY = mouseCanvas.y - node.position.y;
+      }
+    }, { passive: true });
 
     this.plane.appendChild(nodeEl);
   }

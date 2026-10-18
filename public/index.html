@@ -27,6 +27,7 @@
       </button>
       <button class="btn btn-secondary btn-sm" id="fullscreen-workflow-btn" title="Fullscreen view of workflow chart & output">
         ⛶ Fullscreen & Output
+      </button>
       <button class="btn btn-secondary btn-sm" id="templates-btn" title="Explore Pre-built Workflow Blueprints">📚 Templates</button>
       <button class="btn btn-secondary btn-sm" id="payload-sim-btn" title="Simulate Webhook Trigger Payloads">🧪 Test Payload</button>
       <button class="btn btn-secondary btn-sm" id="export-n8n-btn" title="Export in n8n-compatible format">Export n8n</button>
@@ -38,21 +39,25 @@
   <!-- 1. Visual Workflow Editor View -->
   <main class="view-container active" id="view-editor">
     <!-- Left Sidebar: Node Palette -->
-    <aside class="editor-sidebar">
+    <aside class="editor-sidebar" id="editor-sidebar">
       <div class="sidebar-header">
         <span>Nodes Palette</span>
+        <button class="btn-icon mobile-palette-close" id="close-palette-btn" title="Close Palette">✕</button>
       </div>
       <input type="text" class="palette-search" id="palette-search" placeholder="Search nodes (e.g. Gemini, HTTP, IF)..." />
       <div class="palette-category-list" id="palette-categories">
         <!-- Populated dynamically by editor.js -->
       </div>
     </aside>
+    <!-- Mobile Palette Backdrop -->
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
 
     <!-- Canvas Area -->
     <div class="canvas-wrapper" id="canvas-wrapper">
       <!-- Floating Canvas Toolbar -->
       <div class="editor-toolbar">
         <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="btn btn-secondary btn-sm mobile-palette-toggle" id="mobile-palette-btn" title="Open Nodes Palette">📦 Nodes</button>
           <input type="text" class="workflow-name-input" id="workflow-title-input" value="Untitled Workflow" />
           <button class="btn btn-secondary btn-sm" id="workflow-active-toggle">Inactive</button>
         </div>
