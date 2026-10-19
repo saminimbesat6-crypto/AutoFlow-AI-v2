@@ -279,8 +279,19 @@ export class ExpressionSandbox {
       }
     }
 
-    // String interpolation e.g. "Hello {{ $json.name }}, total is ${{ $json.price }}"
-    return template.replace(/\{\{\s*(.*?)\s*\}\}/gs, (_, expr) => {
+    // 1. Quoted expression in templates/JSON: `"{{ expr }}"`
+    let result = template.replace(/"\{\{\s*(.*?)\s*\}\}"/gs, (_, expr) => {
+      try {
+        const val = this.evaluate(expr, options);
+        if (val === undefined || val === null) return '""';
+        return JSON.stringify(val);
+      } catch {
+        return '""';
+      }
+    });
+
+    // 2. Unquoted string interpolation e.g. "Hello {{ $json.name }}, total is ${{ $json.price }}"
+    return result.replace(/\{\{\s*(.*?)\s*\}\}/gs, (_, expr) => {
       try {
         const val = this.evaluate(expr, options);
         if (val === null || val === undefined) return '';

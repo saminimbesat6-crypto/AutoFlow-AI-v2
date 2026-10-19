@@ -52,7 +52,17 @@ export class SetDataNode extends BaseNode {
       try {
         parsed = typeof rawJson === 'string' ? JSON.parse(rawJson) : rawJson;
       } catch (err: any) {
-        throw new Error(`Invalid JSON in Set node: ${err.message}`);
+        if (typeof rawJson === 'string') {
+          try {
+            // Fallback: sanitize unescaped newlines/tabs inside string literals
+            const sanitized = rawJson.replace(/"((?:\\.|[^"\\])*)"/gs, (_, content) => JSON.stringify(content));
+            parsed = JSON.parse(sanitized);
+          } catch {
+            throw new Error(`Invalid JSON in Set node: ${err.message}`);
+          }
+        } else {
+          throw new Error(`Invalid JSON in Set node: ${err.message}`);
+        }
       }
 
       const newJson = mode === 'replace'

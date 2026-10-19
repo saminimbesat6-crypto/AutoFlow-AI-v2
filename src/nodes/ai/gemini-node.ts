@@ -178,15 +178,21 @@ export class GeminiNode extends BaseNode {
         responseMimeType: jsonOutput ? 'application/json' : undefined
       });
 
+      const outputJson: Record<string, any> = {
+        text: response.text,
+        json: response.json || null,
+        usage: response.usage || {},
+        model,
+        promptUsed: prompt,
+        hasVisionData: includeImage
+      };
+
+      if (response.json && typeof response.json === 'object' && !Array.isArray(response.json)) {
+        Object.assign(outputJson, response.json);
+      }
+
       results.push({
-        json: {
-          text: response.text,
-          json: response.json || null,
-          usage: response.usage || {},
-          model,
-          promptUsed: prompt,
-          hasVisionData: includeImage
-        },
+        json: outputJson,
         pairedItem: i
       });
     }

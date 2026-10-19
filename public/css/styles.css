@@ -1230,6 +1230,11 @@ textarea.form-control {
     flex-wrap: nowrap !important;
     gap: 4px !important;
     border-radius: 8px;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .editor-toolbar::-webkit-scrollbar {
+    display: none !important;
   }
   .toolbar-left-group {
     display: flex !important;

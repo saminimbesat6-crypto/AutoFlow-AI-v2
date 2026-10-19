@@ -1,7 +1,10 @@
 const { test, describe, before, after } = require('node:test');
 const assert = require('node:assert');
 const http = require('node:http');
+const path = require('node:path');
+const fs = require('node:fs');
 const { createApp } = require('../dist/server');
+const { closeDatabase } = require('../dist/database/connection');
 
 describe('AutoFlow AI Credential Test Connection (n8n Parity) Suite', () => {
   let app;
@@ -13,8 +16,13 @@ describe('AutoFlow AI Credential Test Connection (n8n Parity) Suite', () => {
   let mockProbeUrl;
   let credentialsManager;
   let serverInstance;
+  let testDbFile;
 
   before(async () => {
+    testDbFile = path.join(__dirname, 'test-credential-validator.sqlite');
+    if (fs.existsSync(testDbFile)) fs.unlinkSync(testDbFile);
+    process.env.DATABASE_PATH = testDbFile;
+
     // 1. Start local mock external probe server
     await new Promise((resolve) => {
       mockProbeServer = http.createServer((req, res) => {
@@ -56,6 +64,10 @@ describe('AutoFlow AI Credential Test Connection (n8n Parity) Suite', () => {
     if (server) server.close();
     if (mockProbeServer) mockProbeServer.close();
     if (serverInstance?.schedulerManager) serverInstance.schedulerManager.destroy();
+    closeDatabase();
+    if (testDbFile && fs.existsSync(testDbFile)) {
+      try { fs.unlinkSync(testDbFile); } catch {}
+    }
   });
 
   test('1. HTTP Header Probe: Successfully verifies valid authentication header', async () => {
