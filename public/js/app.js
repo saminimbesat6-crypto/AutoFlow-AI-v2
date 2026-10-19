@@ -932,6 +932,16 @@ class AutoFlowApp {
     }
   }
 
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   renderPersistedMessage(item) {
     if (item.role === 'user') {
       this.appendAiMessage('user', item.contentHtml);
@@ -940,12 +950,12 @@ class AutoFlowApp {
 
       if (item.workflow && Array.isArray(item.workflow.nodes) && item.workflow.nodes.length > 0) {
         const wf = item.workflow;
-        const nodeBadges = wf.nodes.map((n) => `<span class="ai-node-badge">${n.name}</span>`).join(' <span class="ai-node-arrow">➔</span> ');
+        const nodeBadges = wf.nodes.map((n) => `<span class="ai-node-badge">${this.escapeHtml(n.name)}</span>`).join(' <span class="ai-node-arrow">➔</span> ');
 
         html += `
           <div class="ai-workflow-card">
-            <div class="ai-card-title">⚡ Generated Pipeline: ${wf.name || 'Custom Workflow'}</div>
-            <div style="font-size: 0.78rem; color: var(--text-muted);">${wf.description || 'Deterministic automation pipeline'} (${wf.nodes.length} nodes, ${wf.connections?.length || 0} connections)</div>
+            <div class="ai-card-title">⚡ Generated Pipeline: ${this.escapeHtml(wf.name || 'Custom Workflow')}</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">${this.escapeHtml(wf.description || 'Deterministic automation pipeline')} (${wf.nodes.length} nodes, ${wf.connections?.length || 0} connections)</div>
             <div class="ai-card-pipeline">${nodeBadges}</div>
             <div class="ai-card-actions">
               <button class="btn btn-primary btn-sm rebuild-ai-wf-btn">⚡ Real-Time Build</button>
@@ -1103,12 +1113,12 @@ class AutoFlowApp {
 
       if (aiData.workflow && Array.isArray(aiData.workflow.nodes) && aiData.workflow.nodes.length > 0) {
         const wf = aiData.workflow;
-        const nodeBadges = wf.nodes.map((n) => `<span class="ai-node-badge">${n.name}</span>`).join(' <span class="ai-node-arrow">➔</span> ');
+        const nodeBadges = wf.nodes.map((n) => `<span class="ai-node-badge">${this.escapeHtml(n.name)}</span>`).join(' <span class="ai-node-arrow">➔</span> ');
 
         html += `
           <div class="ai-workflow-card">
-            <div class="ai-card-title">⚡ Generated Pipeline: ${wf.name || 'Custom Workflow'}</div>
-            <div style="font-size: 0.78rem; color: var(--text-muted);">${wf.description || 'Deterministic automation pipeline'} (${wf.nodes.length} nodes, ${wf.connections?.length || 0} connections)</div>
+            <div class="ai-card-title">⚡ Generated Pipeline: ${this.escapeHtml(wf.name || 'Custom Workflow')}</div>
+            <div style="font-size: 0.78rem; color: var(--text-muted);">${this.escapeHtml(wf.description || 'Deterministic automation pipeline')} (${wf.nodes.length} nodes, ${wf.connections?.length || 0} connections)</div>
             <div class="ai-card-pipeline">${nodeBadges}</div>
             <div class="ai-live-builder">
               <div class="ai-live-builder-header">

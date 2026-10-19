@@ -521,7 +521,7 @@ class WorkflowCanvas {
       <div class="node-header" style="border-top: 3px solid ${categoryColor}">
         <div class="node-title-group">
           <div class="node-icon" style="background: ${categoryColor}">⚡</div>
-          <div class="node-name" title="${node.name}">${node.name}</div>
+          <div class="node-name" title="${this.escapeHtml(node.name)}">${this.escapeHtml(node.name)}</div>
         </div>
         ${pinBadge}
         ${disabledBadge}

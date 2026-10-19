@@ -2,20 +2,27 @@ import * as crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase } from '../database/connection';
+import { safeFetch } from '../utils/network';
 
 const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const TAG_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || 'autoflow-default-secret-key-32b!';
+  const secret = process.env.ENCRYPTION_KEY || process.env.ENCRYPTION_SECRET || 'autoflow-default-secret-key-32b!';
+  if (process.env.NODE_ENV === 'production' && secret === 'autoflow-default-secret-key-32b!') {
+    console.warn('[SECURITY WARNING] Running in production with default ENCRYPTION_KEY. Please set a unique 32+ char secret in .env!');
+  }
   return crypto.scryptSync(secret, 'autoflow-salt', 32);
 }
 
-export function encrypt(text: string): string {
+export function encrypt(text: string, aad?: string): string {
   const key = getEncryptionKey();
   const iv = crypto.randomBytes(IV_LENGTH);
   const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv);
+  if (aad) {
+    cipher.setAAD(Buffer.from(aad, 'utf8'));
+  }
   const encrypted = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
   const tag = cipher.getAuthTag();
 
@@ -24,7 +31,7 @@ export function encrypt(text: string): string {
   return combined.toString('base64');
 }
 
-export function decrypt(encryptedText: string): string {
+export function decrypt(encryptedText: string, aad?: string): string {
   const key = getEncryptionKey();
   const buffer = Buffer.from(encryptedText, 'base64');
 
@@ -38,6 +45,20 @@ export function decrypt(encryptedText: string): string {
 
   const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
   decipher.setAuthTag(tag);
+  if (aad) {
+    try {
+      decipher.setAAD(Buffer.from(aad, 'utf8'));
+      const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      return decrypted.toString('utf8');
+    } catch {
+      // Backwards-compatibility fallback without AAD for legacy encrypted records
+      const legacyDecipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv);
+      legacyDecipher.setAuthTag(tag);
+      const decrypted = Buffer.concat([legacyDecipher.update(ciphertext), legacyDecipher.final()]);
+      return decrypted.toString('utf8');
+    }
+  }
+
   const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
   return decrypted.toString('utf8');
 }
@@ -61,7 +82,7 @@ export class CredentialsManager {
   create(name: string, type: string, data: Record<string, any>): CredentialRecord {
     const id = uuidv4();
     const now = new Date().toISOString();
-    const encryptedData = encrypt(JSON.stringify(data));
+    const encryptedData = encrypt(JSON.stringify(data), id);
 
     const stmt = this.db.prepare(
       'INSERT INTO credentials (id, name, type, data, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)'
@@ -83,7 +104,7 @@ export class CredentialsManager {
 
     const now = new Date().toISOString();
     if (data !== undefined) {
-      const encryptedData = encrypt(JSON.stringify(data));
+      const encryptedData = encrypt(JSON.stringify(data), id);
       const stmt = this.db.prepare(
         'UPDATE credentials SET name = ?, data = ?, updated_at = ? WHERE id = ?'
       );
@@ -111,7 +132,7 @@ export class CredentialsManager {
 
     if (includeDecrypted) {
       try {
-        result.data = JSON.parse(decrypt(row.data));
+        result.data = JSON.parse(decrypt(row.data, row.id));
       } catch {
         result.data = {};
       }
@@ -143,7 +164,7 @@ export class CredentialsManager {
         return { success: false, error: 'Credential data cannot be empty' };
       }
 
-      // 1. Generic HTTP header/bearer/basic test
+      // 1. Generic HTTP header/bearer/basic test (SSRF protected)
       if (['httpHeaderAuth', 'httpBearerAuth', 'httpBasicAuth', 'httpCustomAuth'].includes(type)) {
         const testUrl = data.testUrl || data.url;
         if (testUrl) {
@@ -156,7 +177,8 @@ export class CredentialsManager {
             headers['Authorization'] = `Basic ${Buffer.from(`${data.user}:${data.password}`).toString('base64')}`;
           }
 
-          const res = await fetch(testUrl, { method: 'HEAD', headers, signal: AbortSignal.timeout(5000) });
+          const allowPrivate = process.env.NODE_ENV === 'test' || process.env.ALLOW_PRIVATE_NETWORK === 'true';
+          const res = await safeFetch(testUrl, { method: 'HEAD', headers, signal: AbortSignal.timeout(5000) }, allowPrivate);
           if (res.ok) {
             return { success: true, message: `Successfully verified credential against ${testUrl} (HTTP ${res.status})` };
           } else {

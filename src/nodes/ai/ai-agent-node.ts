@@ -2,6 +2,7 @@ import { BaseNode } from '../base';
 import { DataItem, NodeOutput, PortDefinition, PropertyDefinition } from '../../types/workflow';
 import { NodeExecutionContext } from '../../engine/context';
 import { GeminiClient, GeminiContent, GeminiToolDeclaration } from './gemini-client';
+import { safeFetch } from '../../utils/network';
 
 export class AiAgentNode extends BaseNode {
   type = 'ai-agent';
@@ -188,7 +189,7 @@ export class AiAgentNode extends BaseNode {
                 };
               } else if (call.name === 'fetch_safe_url') {
                 const fetchUrl = String(call.args.url || '');
-                const res = await fetch(fetchUrl, { method: 'GET', signal: AbortSignal.timeout(10000) });
+                const res = await safeFetch(fetchUrl, { method: 'GET', signal: AbortSignal.timeout(10000) });
                 const text = await res.text();
                 toolResult = {
                   status: res.status,

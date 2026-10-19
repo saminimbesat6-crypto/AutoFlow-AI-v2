@@ -1,7 +1,7 @@
 import * as crypto from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
 import { getDatabase } from '../database/connection';
-import { CredentialsManager } from './manager';
+import { CredentialsManager, encrypt, decrypt } from './manager';
 
 export interface OAuth2ProviderPreset {
   id: string;
@@ -164,11 +164,12 @@ export class OAuth2Manager {
       scope
     };
 
-    // Store state in oauth2_states table
+    // Store encrypted state in oauth2_states table
     const stmt = this.db.prepare(
       'INSERT INTO oauth2_states (state, credential_id, config, created_at, expires_at) VALUES (?, ?, ?, ?, ?)'
     );
-    stmt.run(state, credentialId || null, JSON.stringify(statePayload), now.toISOString(), expiresAt);
+    const encryptedConfig = encrypt(JSON.stringify(statePayload), state);
+    stmt.run(state, credentialId || null, encryptedConfig, now.toISOString(), expiresAt);
 
     // Build URL query parameters
     const url = new URL(authUrlBase);
@@ -220,7 +221,12 @@ export class OAuth2Manager {
       throw new Error('OAuth2 state token has expired. Please re-initiate connection.');
     }
 
-    const config = JSON.parse(row.config);
+    let config: any;
+    try {
+      config = JSON.parse(decrypt(row.config, state));
+    } catch {
+      config = JSON.parse(row.config);
+    }
     const { credentialId, name, provider, clientId, clientSecret, tokenUrl, redirectUri, scope } = config;
 
     // Exchange authorization code for tokens

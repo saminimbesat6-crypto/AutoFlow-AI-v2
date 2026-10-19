@@ -232,7 +232,18 @@ export class ExpressionSandbox {
       Array,
       Object,
       RegExp,
-      Buffer,
+      Buffer: {
+        from: (data: any, encoding?: BufferEncoding) => {
+          if (typeof data === 'string') {
+            return Buffer.from(data, encoding);
+          }
+          if (Array.isArray(data)) {
+            return Buffer.from(data);
+          }
+          throw new Error('Buffer.from only accepts string or array in sandbox');
+        },
+        isBuffer: (obj: any) => Buffer.isBuffer(obj)
+      },
       parseInt,
       parseFloat,
       encodeURIComponent,
@@ -247,6 +258,21 @@ export class ExpressionSandbox {
     let cleanCode = expression.trim();
     if (cleanCode.startsWith('{{') && cleanCode.endsWith('}}')) {
       cleanCode = cleanCode.substring(2, cleanCode.length - 2).trim();
+    }
+
+    // Security check against host-process breakout tokens
+    const forbiddenPatterns = [
+      /\bprocess\b/,
+      /\bchild_process\b/,
+      /\brequire\b/,
+      /\bmainModule\b/,
+      /\b__proto__\b/,
+      /\bconstructor\s*\.\s*constructor\b/
+    ];
+    for (const pattern of forbiddenPatterns) {
+      if (pattern.test(cleanCode)) {
+        throw new Error(`Expression evaluation error: Security violation: Pattern ${pattern} is blocked in expression sandbox.`);
+      }
     }
 
     try {

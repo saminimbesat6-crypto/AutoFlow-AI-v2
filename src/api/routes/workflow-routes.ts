@@ -126,8 +126,8 @@ export function createWorkflowRouter(
     }
   });
 
-  // Real-time streaming workflow execution (Server-Sent Events)
-  router.get('/:id/execute-stream', async (req: Request, res: Response) => {
+  // Real-time streaming workflow execution (Server-Sent Events) - supports POST and GET
+  const handleExecuteStream = async (req: Request, res: Response) => {
     try {
       const id = String(req.params.id);
       const workflow = repo.getById(id);
@@ -160,7 +160,10 @@ export function createWorkflowRouter(
       res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
       res.end();
     }
-  });
+  };
+
+  router.get('/:id/execute-stream', handleExecuteStream);
+  router.post('/:id/execute-stream', handleExecuteStream);
 
   // Toggle active state
   router.post('/:id/activate', (req: Request, res: Response) => {

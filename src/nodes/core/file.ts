@@ -71,6 +71,22 @@ export class ReadWriteFileNode extends BaseNode {
 
       const resolvedPath = path.resolve(filePathRaw);
 
+      // Security: Block path traversal targeting sensitive system & configuration files
+      const baseName = path.basename(resolvedPath).toLowerCase();
+      if (
+        baseName.startsWith('.env') ||
+        baseName.includes('autoflow.sqlite') ||
+        resolvedPath.includes('/.git/') ||
+        baseName.includes('credential') ||
+        baseName.includes('id_rsa') ||
+        baseName.includes('id_ed25519') ||
+        resolvedPath.startsWith('/etc/') ||
+        resolvedPath.startsWith('/sys/') ||
+        resolvedPath.startsWith('/proc/')
+      ) {
+        throw new Error(`Security violation: Access to sensitive file path "${resolvedPath}" is blocked.`);
+      }
+
       if (operation === 'read') {
         if (!fs.existsSync(resolvedPath)) {
           throw new Error(`File not found: "${resolvedPath}"`);

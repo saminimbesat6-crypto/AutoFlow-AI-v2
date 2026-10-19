@@ -29,8 +29,52 @@ import { createFolderRouter } from './api/routes/folder-routes';
 export function createApp() {
   const app = express();
 
-  // Basic Middleware
-  app.use(cors());
+  // Security: Origin and Host Validation
+  const allowedOriginsEnv = process.env.ALLOWED_ORIGINS;
+  const allowedOrigins = allowedOriginsEnv
+    ? allowedOriginsEnv.split(',').map((o) => o.trim())
+    : ['http://localhost:3456', 'http://127.0.0.1:3456'];
+
+  app.use(cors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server) or in allowed list
+      if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      // Allow localhost with any port in development
+      if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(null, false);
+    },
+    credentials: true
+  }));
+
+  // Host header validation to mitigate DNS rebinding
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const host = (req.headers.host || '').split(':')[0].toLowerCase();
+    const allowedHosts = (process.env.ALLOWED_HOSTS || 'localhost,127.0.0.1,0.0.0.0').split(',').map((h) => h.trim().toLowerCase());
+    if (host && !allowedHosts.includes('*') && !allowedHosts.includes(host) && !host.endsWith('.local') && !host.endsWith('.localhost')) {
+      return res.status(403).json({ success: false, error: 'Forbidden: Invalid Host header' });
+    }
+    next();
+  });
+
+  // Optional API Key / Auth Token guard
+  const apiSecret = process.env.AUTOFLOW_API_KEY || process.env.AUTH_TOKEN;
+  if (apiSecret) {
+    app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+      if (req.path === '/health') return next();
+      const authHeader = req.headers.authorization;
+      const keyHeader = req.headers['x-api-key'];
+      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : keyHeader;
+      if (token !== apiSecret) {
+        return res.status(401).json({ success: false, error: 'Unauthorized: Valid API key required.' });
+      }
+      next();
+    });
+  }
+
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 

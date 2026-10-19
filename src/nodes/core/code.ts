@@ -65,7 +65,15 @@ export class CodeNode extends BaseNode {
       return this.executePython(pyCode, items, mode);
     }
 
-    const code = context.getNodeParameter('jsCode', 0, 'return $input.all();');
+    const code = context.getNodeParameter('jsCode', 0, '') as string;
+
+    // Security check against host-process breakout tokens
+    const forbiddenTokens = ['process.mainModule', 'process.binding', 'child_process', 'fs.read', 'fs.write', 'process.env', 'process.exit'];
+    for (const token of forbiddenTokens) {
+      if (code.includes(token)) {
+        throw new Error(`Security violation: Access to "${token}" is forbidden in sandbox.`);
+      }
+    }
 
     // Safe execution sandbox without access to process, require, or globals
     if (mode === 'runOnceForAllItems') {
@@ -194,7 +202,14 @@ except Exception as err:
     return new Promise((resolve, reject) => {
       let pyProcess: any;
       try {
-        pyProcess = spawn('python3', ['-c', pyScript]);
+        const cleanEnv: NodeJS.ProcessEnv = {
+          PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+          HOME: '/tmp',
+          LANG: 'C.UTF-8',
+          LC_ALL: 'C.UTF-8',
+          PYTHONUNBUFFERED: '1'
+        };
+        pyProcess = spawn('python3', ['-c', pyScript], { env: cleanEnv });
       } catch (e: any) {
         return reject(new Error(`Failed to spawn Python runtime: ${e.message}. Ensure python3 is installed.`));
       }

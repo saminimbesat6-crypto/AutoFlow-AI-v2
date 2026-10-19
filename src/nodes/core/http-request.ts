@@ -1,6 +1,7 @@
 import { BaseNode } from '../base';
 import { DataItem, NodeOutput, PortDefinition, PropertyDefinition } from '../../types/workflow';
 import { NodeExecutionContext } from '../../engine/context';
+import { safeFetch, validateSafeUrl, isPrivateIpAddress } from '../../utils/network';
 
 export class HttpRequestNode extends BaseNode {
   type = 'http-request';
@@ -104,10 +105,8 @@ export class HttpRequestNode extends BaseNode {
   static isPrivateIp(hostname: string): boolean {
     const host = hostname.toLowerCase().trim();
     if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '0.0.0.0') return true;
-    if (host === '169.254.169.254') return true; // Cloud instance metadata
-    if (host.startsWith('10.') || host.startsWith('192.168.') || host.startsWith('169.254.')) return true;
-    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
-    return false;
+    if (host === '169.254.169.254') return true;
+    return isPrivateIpAddress(host);
   }
 
   async execute(context: NodeExecutionContext): Promise<NodeOutput> {
@@ -141,9 +140,7 @@ export class HttpRequestNode extends BaseNode {
         throw new Error(`Security violation: Only HTTP and HTTPS protocols are permitted, got "${parsedUrl.protocol}"`);
       }
 
-      if (!allowPrivate && HttpRequestNode.isPrivateIp(parsedUrl.hostname)) {
-        throw new Error(`Security violation: Request to internal/private network destination "${parsedUrl.hostname}" is blocked by SSRF defense.`);
-      }
+      await validateSafeUrl(rawUrl, allowPrivate);
 
       const headers: Record<string, string> = {};
 
@@ -187,12 +184,12 @@ export class HttpRequestNode extends BaseNode {
       const timer = setTimeout(() => controller.abort(), timeoutMs);
 
       try {
-        const response = await fetch(rawUrl, {
+        const response = await safeFetch(rawUrl, {
           method,
           headers,
           body: requestBody,
           signal: controller.signal
-        });
+        }, allowPrivate);
 
         clearTimeout(timer);
 

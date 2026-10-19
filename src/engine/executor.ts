@@ -407,11 +407,16 @@ export class WorkflowExecutor {
               targetPortMap = new Map<number, DataItem[]>();
               nodePortInputsMap.set(edge.target, targetPortMap);
             }
+            const clonedPortData: DataItem[] = outputDataForPort.map((item) => ({
+              json: JSON.parse(JSON.stringify(item.json || {})),
+              binary: item.binary ? JSON.parse(JSON.stringify(item.binary)) : undefined,
+              pairedItem: item.pairedItem
+            }));
             const existingPortData = targetPortMap.get(inIndex) || [];
-            targetPortMap.set(inIndex, [...existingPortData, ...outputDataForPort]);
+            targetPortMap.set(inIndex, [...existingPortData, ...clonedPortData]);
 
             const existing = nodeInputsMap.get(edge.target) || [];
-            nodeInputsMap.set(edge.target, [...existing, ...outputDataForPort]);
+            nodeInputsMap.set(edge.target, [...existing, ...clonedPortData]);
 
             // If target node is not already in queue, queue it for execution
             if (!executionQueue.includes(edge.target)) {

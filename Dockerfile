@@ -2,12 +2,12 @@
 # AutoFlow AI - Production Multi-Stage Dockerfile
 # ==========================================
 
-# Step 1: Build Stage
-FROM node:20-alpine AS builder
+# Step 1: Build Stage (Node 22 LTS for native node:sqlite DatabaseSync)
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Install native build tools for SQLite compilation
+# Install native build tools
 RUN apk add --no-cache python3 make g++
 
 COPY package*.json tsconfig.json ./
@@ -18,20 +18,21 @@ COPY public/ ./public/
 RUN npm run build
 
 # Step 2: Production Runner
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3456
+ENV DATABASE_PATH=/app/data/autoflow.sqlite
 ENV DB_PATH=/app/data/autoflow.sqlite
 
 COPY package*.json ./
 
-# Install production dependencies including native SQLite bindings
+# Install production dependencies and retain python3 for Python CodeNode support
 RUN apk add --no-cache python3 make g++ \
     && npm ci --omit=dev \
-    && apk del python3 make g++
+    && apk del make g++
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/public ./public

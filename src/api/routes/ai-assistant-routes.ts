@@ -237,6 +237,31 @@ If the user provides an existing workflow in context, modify or extend it logica
       }
 
       const nodeDef = nodeRegistry.get(node.type);
+function redactSecrets(obj: any): any {
+  if (!obj || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(redactSecrets);
+
+  const redacted: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    const lower = k.toLowerCase();
+    if (
+      lower.includes('token') ||
+      lower.includes('secret') ||
+      lower.includes('password') ||
+      lower.includes('apikey') ||
+      lower.includes('api_key') ||
+      lower.includes('authorization')
+    ) {
+      redacted[k] = '[REDACTED]';
+    } else if (typeof v === 'object' && v !== null) {
+      redacted[k] = redactSecrets(v);
+    } else {
+      redacted[k] = v;
+    }
+  }
+  return redacted;
+}
+
       const allowedParams = (nodeDef?.properties || []).map((p) => `${p.name} (${p.type}): ${p.description || ''}`).join(', ');
 
       const prompt = `A workflow node has encountered a runtime error during execution in AutoFlow AI.
@@ -245,14 +270,14 @@ NODE INFORMATION:
 - Name: "${node.name}"
 - Type: "${node.type}"
 - Current Parameters:
-${JSON.stringify(node.parameters || {}, null, 2)}
+${JSON.stringify(redactSecrets(node.parameters || {}), null, 2)}
 - Allowed Parameter Schema for this node type:
 ${allowedParams || 'Standard node parameters'}
 
 EXECUTION CONTEXT:
 - Runtime Error: "${error || 'Execution failed with unknown error'}"
 - Sample Input Data to this node:
-${JSON.stringify((inputData || []).slice(0, 2), null, 2)}
+${JSON.stringify(redactSecrets((inputData || []).slice(0, 2)), null, 2)}
 
 TASK:
 1. Identify the root cause of the error.
@@ -286,6 +311,20 @@ Respond ONLY with a valid JSON object matching this schema:
         else throw new Error('Could not parse Gemini auto-fix response');
       }
 
+      // Whitelist filter fixed parameters to avoid injecting unexpected or forbidden keys
+      const validPropNames = new Set((nodeDef?.properties || []).map((p) => p.name));
+      const cleanFixedParameters: Record<string, any> = {};
+      if (fixData.fixedParameters && typeof fixData.fixedParameters === 'object') {
+        for (const [k, v] of Object.entries(fixData.fixedParameters)) {
+          if (validPropNames.has(k) || (node.parameters && k in node.parameters)) {
+            if ((k === 'jsCode' || k === 'pythonCode') && node.type !== 'code') {
+              continue;
+            }
+            cleanFixedParameters[k] = v;
+          }
+        }
+      }
+
       res.json({
         success: true,
         data: {
@@ -293,7 +332,7 @@ Respond ONLY with a valid JSON object matching this schema:
           nodeName: node.name,
           diagnosis: fixData.diagnosis || 'Parameter issue identified',
           fixExplanation: fixData.fixExplanation || 'Adjusted parameters to resolve execution error',
-          fixedParameters: fixData.fixedParameters || node.parameters,
+          fixedParameters: Object.keys(cleanFixedParameters).length > 0 ? cleanFixedParameters : (fixData.fixedParameters || node.parameters),
           confidence: fixData.confidence || 'high'
         }
       });

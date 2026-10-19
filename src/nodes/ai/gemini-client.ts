@@ -78,7 +78,7 @@ export class GeminiClient {
       throw new Error('Gemini API key is required. Please configure it in node credentials or GEMINI_API_KEY environment variable.');
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
 
     const body: Record<string, any> = {
       contents: options.contents
@@ -111,7 +111,10 @@ export class GeminiClient {
     try {
       res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey
+        },
         body: JSON.stringify(body),
         signal: controller.signal
       });

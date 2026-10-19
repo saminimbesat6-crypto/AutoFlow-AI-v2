@@ -9,7 +9,7 @@ export function getDatabase(customPath?: string): DatabaseSync {
     return dbInstance;
   }
 
-  const dbPath = customPath || process.env.DATABASE_PATH || path.join(process.cwd(), 'data', 'autoflow.sqlite');
+  const dbPath = customPath || process.env.DATABASE_PATH || process.env.DB_PATH || path.join(process.cwd(), 'data', 'autoflow.sqlite');
   const dir = path.dirname(dbPath);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -17,6 +17,8 @@ export function getDatabase(customPath?: string): DatabaseSync {
 
   const db = new DatabaseSync(dbPath);
   db.exec('PRAGMA journal_mode = WAL;');
+  db.exec('PRAGMA busy_timeout = 10000;');
+  db.exec('PRAGMA synchronous = NORMAL;');
   db.exec('PRAGMA foreign_keys = ON;');
 
   if (!customPath) {
