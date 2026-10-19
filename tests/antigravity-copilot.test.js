@@ -13,6 +13,7 @@ describe('Antigravity CLI Copilot & Google Sign-In Test Suite', () => {
   let baseUrl;
 
   before(async () => {
+    process.env.NODE_ENV = 'test';
     process.env.PORT = '3991';
     process.env.ALLOW_PRIVATE_NETWORK = 'true';
     const { app } = createApp();

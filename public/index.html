@@ -31,16 +31,34 @@
 
     <div class="header-actions">
       <button class="btn btn-ai-copilot btn-sm" id="ai-assistant-toggle-btn" title="Open Copilot Side Panel">
-        <span class="sparkle-icon">✨</span> Copilot Side
+        <span class="sparkle-icon">✨</span> <span class="desktop-only-inline">Copilot</span>
       </button>
-      <button class="btn btn-secondary btn-sm" id="fullscreen-workflow-btn" title="Fullscreen view of workflow chart & output">
-        ⛶ Fullscreen & Output
-      </button>
-      <button class="btn btn-secondary btn-sm" id="templates-btn" title="Explore Pre-built Workflow Blueprints">📚 Templates</button>
-      <button class="btn btn-secondary btn-sm" id="payload-sim-btn" title="Simulate Webhook Trigger Payloads">🧪 Test Payload</button>
-      <button class="btn btn-secondary btn-sm" id="export-n8n-btn" title="Export in n8n-compatible format">Export n8n</button>
-      <button class="btn btn-secondary btn-sm" id="export-autoflow-btn" title="Export native AutoFlow format">Export JSON</button>
-      <button class="btn btn-secondary btn-sm" id="import-workflow-btn">Import</button>
+      <div class="header-more-container" id="header-more-container">
+        <button class="btn btn-secondary btn-sm header-more-btn" id="header-more-btn" title="More Actions & Tools">⋮ More</button>
+        <div class="header-more-dropdown" id="header-more-dropdown">
+          <div class="dropdown-section-title">Workflow Tools</div>
+          <button class="dropdown-item" id="fullscreen-workflow-btn" title="Fullscreen view of workflow chart & output">
+            <span class="item-icon">⛶</span> Fullscreen & Output
+          </button>
+          <button class="dropdown-item" id="templates-btn" title="Explore Pre-built Workflow Blueprints">
+            <span class="item-icon">📚</span> Templates Blueprints
+          </button>
+          <button class="dropdown-item" id="payload-sim-btn" title="Simulate Webhook Trigger Payloads">
+            <span class="item-icon">🧪</span> Test Payload Simulator
+          </button>
+          <div class="dropdown-divider"></div>
+          <div class="dropdown-section-title">Workflow File</div>
+          <button class="dropdown-item" id="export-n8n-btn" title="Export in n8n-compatible format">
+            <span class="item-icon">📦</span> Export n8n JSON
+          </button>
+          <button class="dropdown-item" id="export-autoflow-btn" title="Export native AutoFlow format">
+            <span class="item-icon">💾</span> Export AutoFlow JSON
+          </button>
+          <button class="dropdown-item" id="import-workflow-btn" title="Import workflow from JSON">
+            <span class="item-icon">📥</span> Import Workflow
+          </button>
+        </div>
+      </div>
     </div>
   </header>
 
@@ -64,7 +82,7 @@
 
     <!-- Canvas Area -->
     <div class="canvas-wrapper" id="canvas-wrapper">
-      <!-- Floating Canvas Toolbar -->
+      <!-- Floating Canvas Toolbar (Top bar: Breadcrumb & Execution controls) -->
       <div class="editor-toolbar">
         <div class="toolbar-left-group">
           <button class="btn btn-secondary btn-sm mobile-palette-toggle" id="mobile-palette-btn" title="Open Nodes Palette">📦 Nodes</button>
@@ -76,16 +94,21 @@
           <button class="btn btn-secondary btn-sm" id="workflow-active-toggle">Inactive</button>
         </div>
         <div class="toolbar-buttons">
-          <button class="btn btn-secondary btn-sm" id="canvas-undo-btn" title="Undo (Ctrl+Z)">↶</button>
-          <button class="btn btn-secondary btn-sm" id="canvas-redo-btn" title="Redo (Ctrl+Y)">↷</button>
-          <button class="btn btn-secondary btn-sm" id="canvas-add-note-btn" title="Add Sticky Note to Canvas">📝 Note</button>
-          <button class="btn btn-secondary btn-sm" id="canvas-zoom-fit-btn" title="Zoom to fit workflow">⛶ Fit</button>
-          <button class="btn btn-ai-pill btn-sm desktop-only" id="canvas-ai-copilot-btn">💬 Copilot Side</button>
-          <button class="btn btn-secondary btn-sm desktop-only" id="canvas-fullscreen-btn" title="Fullscreen view of workflow chart & output">⛶ Fullscreen</button>
           <button class="btn btn-secondary btn-sm" id="canvas-history-btn" title="Version History & Rollback">🕒 History</button>
           <button class="btn btn-secondary btn-sm" id="save-workflow-btn">💾 Save</button>
-          <button class="btn btn-primary btn-sm" id="execute-workflow-btn">▶ Test</button>
+          <button class="btn btn-primary btn-sm btn-n8n-execute" id="execute-workflow-btn">▶ Test</button>
         </div>
+      </div>
+
+      <!-- n8n-Style Floating Canvas Navigation Dock (Bottom-Left Pill) -->
+      <div class="canvas-floating-dock" id="canvas-floating-dock">
+        <button class="btn-dock-icon" id="canvas-undo-btn" title="Undo (Ctrl+Z)">↶</button>
+        <button class="btn-dock-icon" id="canvas-redo-btn" title="Redo (Ctrl+Y)">↷</button>
+        <div class="dock-divider"></div>
+        <button class="btn-dock-icon" id="canvas-zoom-fit-btn" title="Zoom to fit workflow">⛶ Fit</button>
+        <button class="btn-dock-icon" id="canvas-add-note-btn" title="Add Sticky Note to Canvas">📝 Note</button>
+        <button class="btn-dock-icon desktop-only" id="canvas-fullscreen-btn" title="Fullscreen view of workflow chart & output">⛶</button>
+        <button class="btn-dock-icon desktop-only" id="canvas-ai-copilot-btn" title="Open Copilot Side">💬</button>
       </div>
 
       <!-- Canvas SVG & Plane -->
@@ -767,6 +790,30 @@
       </div>
     </div>
   </div>
+
+  <!-- Mobile Bottom Navigation Bar (Phone-Friendly View Switcher) -->
+  <nav class="mobile-bottom-nav" id="mobile-bottom-nav">
+    <button class="mobile-nav-btn" data-view="projects">
+      <span class="mobile-nav-icon">📁</span>
+      <span class="mobile-nav-label">Projects</span>
+    </button>
+    <button class="mobile-nav-btn active" data-view="editor">
+      <span class="mobile-nav-icon">⚡</span>
+      <span class="mobile-nav-label">Editor</span>
+    </button>
+    <button class="mobile-nav-btn" data-view="workflows">
+      <span class="mobile-nav-icon">🔀</span>
+      <span class="mobile-nav-label">Flows</span>
+    </button>
+    <button class="mobile-nav-btn" data-view="executions">
+      <span class="mobile-nav-icon">⏱</span>
+      <span class="mobile-nav-label">Runs</span>
+    </button>
+    <button class="mobile-nav-btn" data-view="credentials">
+      <span class="mobile-nav-icon">🔑</span>
+      <span class="mobile-nav-label">Keys</span>
+    </button>
+  </nav>
 
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toast-container"></div>

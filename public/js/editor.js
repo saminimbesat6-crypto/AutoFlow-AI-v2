@@ -135,6 +135,12 @@ class WorkflowEditor {
   }
 
   openMobilePalette() {
+    // Close other drawers to prevent overlapping
+    document.getElementById('node-drawer')?.classList.remove('open');
+    document.getElementById('ai-copilot-drawer')?.classList.remove('open');
+    document.getElementById('version-history-drawer')?.classList.remove('open');
+    document.body.classList.add('has-open-drawer');
+
     if (this.sidebarEl) this.sidebarEl.classList.add('open');
     if (this.sidebarBackdrop) this.sidebarBackdrop.classList.add('open');
   }
@@ -142,6 +148,9 @@ class WorkflowEditor {
   closeMobilePalette() {
     if (this.sidebarEl) this.sidebarEl.classList.remove('open');
     if (this.sidebarBackdrop) this.sidebarBackdrop.classList.remove('open');
+    if (!document.querySelector('.node-drawer.open, .ai-copilot-drawer.open, .version-history-drawer.open')) {
+      document.body.classList.remove('has-open-drawer');
+    }
   }
 
   addNodeToCanvas(nodeType) {
@@ -190,6 +199,11 @@ class WorkflowEditor {
   }
 
   openDrawer(node) {
+    this.closeMobilePalette();
+    document.getElementById('ai-copilot-drawer')?.classList.remove('open');
+    document.getElementById('version-history-drawer')?.classList.remove('open');
+    document.body.classList.add('has-open-drawer');
+
     this.currentNode = node;
     const nodeDef = this.nodeTypes.find((nt) => nt.type === node.type);
     this.drawerTitle.textContent = `${nodeDef?.name || node.type} Settings`;
@@ -616,6 +630,9 @@ class WorkflowEditor {
   closeDrawer() {
     this.nodeDrawer.classList.remove('open');
     this.currentNode = null;
+    if (!document.querySelector('.ai-copilot-drawer.open, .version-history-drawer.open, .editor-sidebar.open')) {
+      document.body.classList.remove('has-open-drawer');
+    }
   }
 
   showNodeDebug(node) {

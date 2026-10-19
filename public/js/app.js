@@ -135,13 +135,41 @@ class AutoFlowApp {
   }
 
   initUI() {
-    // Navigation Tabs
+    // Navigation Tabs (Desktop)
     document.querySelectorAll('.nav-tab').forEach((tab) => {
       tab.addEventListener('click', () => {
         const viewId = tab.dataset.view;
         this.switchView(viewId);
       });
     });
+
+    // Mobile Bottom Navigation Bar
+    document.querySelectorAll('.mobile-nav-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const viewId = btn.dataset.view;
+        this.switchView(viewId);
+      });
+    });
+
+    // Header More Actions Dropdown (Clean n8n More Menu)
+    const moreBtn = document.getElementById('header-more-btn');
+    const moreContainer = document.getElementById('header-more-container');
+    if (moreBtn && moreContainer) {
+      moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        moreContainer.classList.toggle('open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!moreContainer.contains(e.target)) {
+          moreContainer.classList.remove('open');
+        }
+      });
+      moreContainer.querySelectorAll('.dropdown-item').forEach((item) => {
+        item.addEventListener('click', () => {
+          moreContainer.classList.remove('open');
+        });
+      });
+    }
 
     // Workflow Title Edit
     const titleInput = document.getElementById('workflow-title-input');
@@ -194,6 +222,9 @@ class AutoFlowApp {
     });
     document.getElementById('close-history-btn')?.addEventListener('click', () => {
       document.getElementById('version-history-drawer')?.classList.remove('open');
+      if (!document.querySelector('.node-drawer.open, .ai-copilot-drawer.open, .editor-sidebar.open')) {
+        document.body.classList.remove('has-open-drawer');
+      }
     });
 
     // Prune Executions Button
@@ -921,6 +952,10 @@ class AutoFlowApp {
       t.classList.toggle('active', t.dataset.view === viewName);
     });
 
+    document.querySelectorAll('.mobile-nav-btn').forEach((btn) => {
+      btn.classList.toggle('active', btn.dataset.view === viewName);
+    });
+
     document.querySelectorAll('.view-container').forEach((vc) => {
       vc.classList.toggle('active', vc.id === `view-${viewName}`);
     });
@@ -1085,6 +1120,14 @@ class AutoFlowApp {
     if (!historyDrawer || !listEl) return;
 
     listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading version history...</div>';
+    
+    // Close other drawers to prevent overlapping
+    document.getElementById('node-drawer')?.classList.remove('open');
+    document.getElementById('ai-copilot-drawer')?.classList.remove('open');
+    document.getElementById('editor-sidebar')?.classList.remove('open');
+    document.getElementById('sidebar-backdrop')?.classList.remove('open');
+    document.body.classList.add('has-open-drawer');
+
     historyDrawer.classList.add('open');
 
     try {
@@ -1338,6 +1381,13 @@ class AutoFlowApp {
     }
 
     const openDrawer = () => {
+      // Close other drawers to prevent overlapping
+      document.getElementById('node-drawer')?.classList.remove('open');
+      document.getElementById('version-history-drawer')?.classList.remove('open');
+      document.getElementById('editor-sidebar')?.classList.remove('open');
+      document.getElementById('sidebar-backdrop')?.classList.remove('open');
+      document.body.classList.add('has-open-drawer');
+
       this.switchView('editor');
       drawer.classList.add('open');
       localStorage.setItem('autoflow_ai_copilot_open', 'true');
@@ -1347,6 +1397,9 @@ class AutoFlowApp {
     const closeDrawer = () => {
       drawer.classList.remove('open');
       localStorage.setItem('autoflow_ai_copilot_open', 'false');
+      if (!document.querySelector('.node-drawer.open, .version-history-drawer.open, .editor-sidebar.open')) {
+        document.body.classList.remove('has-open-drawer');
+      }
     };
 
     toggleBtn?.addEventListener('click', () => {

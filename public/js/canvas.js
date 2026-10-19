@@ -508,6 +508,7 @@ class WorkflowCanvas {
     const nodeEl = document.createElement('div');
     nodeEl.className = 'canvas-node' + (node.disabled ? ' node-disabled' : '');
     nodeEl.id = `node-${node.id}`;
+    nodeEl.dataset.category = nodeDef.category || 'core';
     if (this.selectedNodeId === node.id) nodeEl.classList.add('selected');
 
     nodeEl.style.left = `${node.position.x}px`;
