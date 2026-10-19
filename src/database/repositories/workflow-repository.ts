@@ -16,13 +16,14 @@ export class WorkflowRepository {
     this.tagRepo = new TagRepository(this.db);
   }
 
-  create(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'> & { id?: string; tags?: string[] }): Workflow {
+  create(workflow: Omit<Workflow, 'id' | 'createdAt' | 'updatedAt'> & { id?: string; tags?: string[]; projectId?: string }): Workflow {
     const id = workflow.id || uuidv4();
     const now = new Date().toISOString();
+    const projectId = workflow.projectId || 'default';
 
     const stmt = this.db.prepare(`
-      INSERT INTO workflows (id, name, description, nodes, connections, settings, active, folder_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workflows (id, name, description, nodes, connections, settings, active, folder_id, project_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -34,6 +35,7 @@ export class WorkflowRepository {
       JSON.stringify(workflow.settings || {}),
       workflow.active ? 1 : 0,
       workflow.folderId || null,
+      projectId,
       now,
       now
     );
@@ -57,6 +59,7 @@ export class WorkflowRepository {
       id,
       name: workflow.name,
       description: workflow.description,
+      projectId,
       folderId: workflow.folderId,
       tags: workflow.tags || [],
       nodes: workflow.nodes || [],
@@ -80,14 +83,15 @@ export class WorkflowRepository {
     const settings = updates.settings !== undefined ? JSON.stringify(updates.settings) : JSON.stringify(existing.settings);
     const active = updates.active !== undefined ? (updates.active ? 1 : 0) : (existing.active ? 1 : 0);
     const folderId = updates.folderId !== undefined ? (updates.folderId || null) : (existing.folderId || null);
+    const projectId = updates.projectId !== undefined ? (updates.projectId || 'default') : (existing.projectId || 'default');
 
     const stmt = this.db.prepare(`
       UPDATE workflows
-      SET name = ?, description = ?, nodes = ?, connections = ?, settings = ?, active = ?, folder_id = ?, updated_at = ?
+      SET name = ?, description = ?, nodes = ?, connections = ?, settings = ?, active = ?, folder_id = ?, project_id = ?, updated_at = ?
       WHERE id = ?
     `);
 
-    stmt.run(name, description || null, nodes, connections, settings, active, folderId, now, id);
+    stmt.run(name, description || null, nodes, connections, settings, active, folderId, projectId, now, id);
 
     // Update tags if specified
     if (updates.tags && Array.isArray(updates.tags)) {
@@ -123,6 +127,7 @@ export class WorkflowRepository {
       id: row.id,
       name: row.name,
       description: row.description || undefined,
+      projectId: row.project_id || 'default',
       folderId: row.folder_id || undefined,
       tags,
       nodes: JSON.parse(row.nodes),
@@ -134,9 +139,10 @@ export class WorkflowRepository {
     };
   }
 
-  list(filters?: { folderId?: string; tagId?: string }): Workflow[] {
+  list(filters?: { folderId?: string; tagId?: string; projectId?: string }): Workflow[] {
     let sql = 'SELECT * FROM workflows';
     const params: any[] = [];
+    const conditions: string[] = [];
 
     if (filters?.tagId) {
       sql = `
@@ -149,9 +155,22 @@ export class WorkflowRepository {
         sql += ' AND w.folder_id = ?';
         params.push(filters.folderId);
       }
-    } else if (filters?.folderId) {
-      sql += ' WHERE folder_id = ?';
-      params.push(filters.folderId);
+      if (filters?.projectId) {
+        sql += ' AND w.project_id = ?';
+        params.push(filters.projectId);
+      }
+    } else {
+      if (filters?.folderId) {
+        conditions.push('folder_id = ?');
+        params.push(filters.folderId);
+      }
+      if (filters?.projectId) {
+        conditions.push('project_id = ?');
+        params.push(filters.projectId);
+      }
+      if (conditions.length > 0) {
+        sql += ` WHERE ${conditions.join(' AND ')}`;
+      }
     }
 
     sql += ' ORDER BY updated_at DESC';
@@ -163,6 +182,7 @@ export class WorkflowRepository {
       id: row.id,
       name: row.name,
       description: row.description || undefined,
+      projectId: row.project_id || 'default',
       folderId: row.folder_id || undefined,
       tags: this.tagRepo.getWorkflowTags(row.id).map((t) => t.id),
       nodes: JSON.parse(row.nodes),
@@ -196,6 +216,7 @@ export class WorkflowRepository {
       id: row.id,
       name: row.name,
       description: row.description || undefined,
+      projectId: row.project_id || 'default',
       folderId: row.folder_id || undefined,
       tags: this.tagRepo.getWorkflowTags(row.id).map((t) => t.id),
       nodes: JSON.parse(row.nodes),

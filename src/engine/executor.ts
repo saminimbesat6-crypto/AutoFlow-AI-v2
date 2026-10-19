@@ -496,26 +496,28 @@ export class WorkflowExecutor {
 
   private saveExecutionRecord(exec: ExecutionRecord, nodes: NodeExecutionRecord[]): void {
     // Ensure workflow row exists to satisfy foreign key constraint
-    const checkWf = this.db.prepare('SELECT id FROM workflows WHERE id = ?').get(exec.workflowId);
+    const checkWf = this.db.prepare('SELECT id, project_id FROM workflows WHERE id = ?').get(exec.workflowId) as any;
+    const projectId = exec.projectId || checkWf?.project_id || 'default';
     if (!checkWf) {
       const now = new Date().toISOString();
       const insertWf = this.db.prepare(`
-        INSERT OR IGNORE INTO workflows (id, name, description, nodes, connections, settings, active, created_at, updated_at)
-        VALUES (?, ?, '', '[]', '[]', '{}', 0, ?, ?)
+        INSERT OR IGNORE INTO workflows (id, name, description, nodes, connections, settings, active, project_id, created_at, updated_at)
+        VALUES (?, ?, '', '[]', '[]', '{}', 0, ?, ?, ?)
       `);
-      insertWf.run(exec.workflowId, exec.workflowName, now, now);
+      insertWf.run(exec.workflowId, exec.workflowName, projectId, now, now);
     }
 
     const execStmt = this.db.prepare(`
       INSERT INTO executions (
-        id, workflow_id, workflow_name, mode, status, started_at, finished_at, duration, error_message, data
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, workflow_id, workflow_name, project_id, mode, status, started_at, finished_at, duration, error_message, data
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     execStmt.run(
       exec.id,
       exec.workflowId,
       exec.workflowName,
+      projectId,
       exec.mode,
       exec.status,
       exec.startedAt,

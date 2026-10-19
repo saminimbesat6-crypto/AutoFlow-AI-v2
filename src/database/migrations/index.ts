@@ -217,5 +217,69 @@ export function runMigrations(db: DatabaseSync): void {
     const insertStmt6 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
     insertStmt6.run(6, nowIso);
   }
+
+  // Migration 7: Multi-Project Workspace & Isolation
+  const check7 = stmt.get(7);
+  if (!check7) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        labels TEXT NOT NULL DEFAULT '[]',
+        settings TEXT NOT NULL DEFAULT '{}',
+        archived INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_projects_archived ON projects(archived);
+      CREATE INDEX IF NOT EXISTS idx_projects_updated_at ON projects(updated_at);
+    `);
+
+    try {
+      db.exec(`ALTER TABLE workflows ADD COLUMN project_id TEXT DEFAULT 'default';`);
+    } catch {}
+
+    try {
+      db.exec(`ALTER TABLE executions ADD COLUMN project_id TEXT DEFAULT 'default';`);
+    } catch {}
+
+    try {
+      db.exec(`ALTER TABLE credentials ADD COLUMN project_id TEXT DEFAULT 'default';`);
+    } catch {}
+
+    const nowIso = new Date().toISOString();
+    const defaultProjectCheck = db.prepare('SELECT id FROM projects WHERE id = ?').get('default');
+    if (!defaultProjectCheck) {
+      db.prepare(`
+        INSERT INTO projects (id, name, description, labels, settings, archived, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 0, ?, ?)
+      `).run(
+        'default',
+        'Default Project',
+        'Primary workspace for your automated workflows and integrations',
+        JSON.stringify(['general', 'primary']),
+        JSON.stringify({ color: '#6366f1', icon: 'folder' }),
+        nowIso,
+        nowIso
+      );
+    }
+
+    try {
+      db.exec(`UPDATE workflows SET project_id = 'default' WHERE project_id IS NULL OR project_id = '';`);
+      db.exec(`UPDATE executions SET project_id = 'default' WHERE project_id IS NULL OR project_id = '';`);
+      db.exec(`UPDATE credentials SET project_id = 'default' WHERE project_id IS NULL OR project_id = '';`);
+    } catch {}
+
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_workflows_project_id ON workflows(project_id);
+      CREATE INDEX IF NOT EXISTS idx_executions_project_id ON executions(project_id);
+      CREATE INDEX IF NOT EXISTS idx_credentials_project_id ON credentials(project_id);
+    `);
+
+    const insertStmt7 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+    insertStmt7.run(7, nowIso);
+  }
 }
 

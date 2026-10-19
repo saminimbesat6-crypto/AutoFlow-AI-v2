@@ -13,7 +13,17 @@ class AutoFlowApp {
     this.aiChatHistory = [];
     this.lastExecutionDetails = null;
 
+    this.currentProjectId = localStorage.getItem('autoflow_active_project') || 'default';
+    this.currentProjectName = 'Default Project';
+    this.projectsList = [];
+    this.projectFilter = 'active';
+    this.projectSearch = '';
+    this.projectSort = 'updated_at:desc';
+    this.uploadedBundleBuffer = null;
+    this.uploadedBundleName = null;
+
     this.initUI();
+    this.initProjectsUI();
     this.initAiCopilot();
     this.initFullscreenViewer();
     this.initAutoFix();
@@ -68,14 +78,18 @@ class AutoFlowApp {
 
       await this.editor.init(this.nodeTypes, this.credentials);
 
-      // 3. Load or create initial workflow
-      const wfRes = await this.api('/api/workflows');
+      // 3. Load active project info
+      await this.loadActiveProject();
+
+      // 4. Load or create initial workflow
+      const wfRes = await this.api(`/api/workflows?projectId=${encodeURIComponent(this.currentProjectId || 'default')}`);
       if (wfRes.data && wfRes.data.length > 0) {
         this.openWorkflow(wfRes.data[0]);
       } else {
         this.createNewWorkflow('Sample Gemini AI Workflow');
       }
 
+      this.loadProjectsList();
       this.loadWorkflowsList();
       await this.checkAiStatus();
     } catch (err) {
@@ -89,6 +103,34 @@ class AutoFlowApp {
           </div>
         `;
       }
+    }
+  }
+
+  async loadActiveProject() {
+    try {
+      const res = await this.api(`/api/projects/${encodeURIComponent(this.currentProjectId || 'default')}`);
+      if (res.data) {
+        this.currentProjectId = res.data.id;
+        this.currentProjectName = res.data.name;
+        this.updateProjectHeaderUI();
+      }
+    } catch (err) {
+      this.currentProjectId = 'default';
+      this.currentProjectName = 'Default Project';
+      this.updateProjectHeaderUI();
+    }
+  }
+
+  updateProjectHeaderUI() {
+    const headerProj = document.getElementById('current-project-name');
+    if (headerProj) {
+      headerProj.textContent = this.currentProjectName;
+      headerProj.title = `Current Workspace Project: ${this.currentProjectName} (${this.currentProjectId})`;
+    }
+    const breadcrumbProj = document.getElementById('editor-breadcrumb-project');
+    if (breadcrumbProj) {
+      breadcrumbProj.textContent = this.currentProjectName;
+      breadcrumbProj.title = `Switch Workspace Project (Current: ${this.currentProjectName})`;
     }
   }
 
@@ -377,6 +419,503 @@ class AutoFlowApp {
     });
   }
 
+  // --- Project Workspace Management ---
+  initProjectsUI() {
+    // Header & Breadcrumb project click
+    document.getElementById('project-selector-btn')?.addEventListener('click', () => {
+      this.switchView('projects');
+    });
+    document.getElementById('editor-breadcrumb-project')?.addEventListener('click', () => {
+      this.switchView('projects');
+    });
+
+    // New Project Button
+    document.getElementById('new-project-btn')?.addEventListener('click', () => {
+      const modal = document.getElementById('project-modal');
+      if (!modal) return;
+      document.getElementById('project-modal-title').textContent = 'Create New Project';
+      document.getElementById('edit-project-id').value = '';
+      document.getElementById('project-name-input').value = '';
+      document.getElementById('project-desc-input').value = '';
+      document.getElementById('project-labels-input').value = '';
+      document.getElementById('project-color-input').value = '#6366f1';
+      modal.classList.add('open');
+    });
+
+    // Close Project Modal
+    document.getElementById('close-project-modal-btn')?.addEventListener('click', () => {
+      document.getElementById('project-modal')?.classList.remove('open');
+    });
+    document.getElementById('cancel-project-btn')?.addEventListener('click', () => {
+      document.getElementById('project-modal')?.classList.remove('open');
+    });
+
+    // Save Project (Create or Update)
+    document.getElementById('save-project-btn')?.addEventListener('click', async () => {
+      const name = document.getElementById('project-name-input').value.trim();
+      const desc = document.getElementById('project-desc-input').value.trim();
+      const rawLabels = document.getElementById('project-labels-input').value.trim();
+      const color = document.getElementById('project-color-input').value;
+      const editId = document.getElementById('edit-project-id').value.trim();
+
+      if (!name) {
+        this.toast('Project name is required', 'error');
+        return;
+      }
+
+      const labels = rawLabels ? rawLabels.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      const payload = {
+        name,
+        description: desc,
+        labels,
+        settings: { color }
+      };
+
+      try {
+        if (editId) {
+          await this.api(`/api/projects/${editId}`, {
+            method: 'PUT',
+            body: JSON.stringify(payload)
+          });
+          if (this.currentProjectId === editId) {
+            this.currentProjectName = name;
+            this.updateProjectHeaderUI();
+          }
+          this.toast(`Project "${name}" updated`, 'success');
+        } else {
+          const res = await this.api('/api/projects', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+          });
+          this.toast(`Project "${name}" created`, 'success');
+          if (res.data) {
+            this.selectProject(res.data.id, res.data.name);
+          }
+        }
+        document.getElementById('project-modal')?.classList.remove('open');
+        this.loadProjectsList();
+      } catch (err) {
+        this.toast(`Failed to save project: ${err.message}`, 'error');
+      }
+    });
+
+    // Duplicate Project Modal
+    document.getElementById('close-dup-modal-btn')?.addEventListener('click', () => {
+      document.getElementById('duplicate-project-modal')?.classList.remove('open');
+    });
+    document.getElementById('cancel-dup-btn')?.addEventListener('click', () => {
+      document.getElementById('duplicate-project-modal')?.classList.remove('open');
+    });
+    document.getElementById('confirm-dup-btn')?.addEventListener('click', async () => {
+      const sourceId = document.getElementById('dup-source-id').value;
+      const newName = document.getElementById('dup-name-input').value.trim();
+      if (!sourceId) return;
+      try {
+        const res = await this.api(`/api/projects/${sourceId}/duplicate`, {
+          method: 'POST',
+          body: JSON.stringify({ name: newName || undefined })
+        });
+        document.getElementById('duplicate-project-modal')?.classList.remove('open');
+        this.toast('Project duplicated successfully!', 'success');
+        this.loadProjectsList();
+        if (res.data?.project) {
+          this.selectProject(res.data.project.id, res.data.project.name);
+        }
+      } catch (err) {
+        this.toast(`Duplication failed: ${err.message}`, 'error');
+      }
+    });
+
+    // Import Bundle Modal
+    const importBundleBtn = document.getElementById('import-bundle-btn');
+    const importBundleModal = document.getElementById('import-bundle-modal');
+    const closeBundleBtn = document.getElementById('close-bundle-modal-btn');
+    const cancelBundleBtn = document.getElementById('cancel-bundle-btn');
+    const bundleDropzone = document.getElementById('bundle-dropzone');
+    const bundleFileInput = document.getElementById('bundle-file-input');
+    const bundleLabel = document.getElementById('bundle-dropzone-label');
+    const confirmBundleBtn = document.getElementById('confirm-bundle-import-btn');
+
+    importBundleBtn?.addEventListener('click', () => {
+      this.uploadedBundleBuffer = null;
+      this.uploadedBundleName = null;
+      if (bundleLabel) bundleLabel.textContent = 'Click to select .ZIP or .JSON bundle';
+      document.getElementById('bundle-json-input').value = '';
+      importBundleModal?.classList.add('open');
+    });
+
+    closeBundleBtn?.addEventListener('click', () => {
+      importBundleModal?.classList.remove('open');
+    });
+    cancelBundleBtn?.addEventListener('click', () => {
+      importBundleModal?.classList.remove('open');
+    });
+
+    bundleDropzone?.addEventListener('click', () => {
+      bundleFileInput?.click();
+    });
+
+    const handleFile = (file) => {
+      if (!file) return;
+      this.uploadedBundleName = file.name;
+      if (bundleLabel) bundleLabel.textContent = `Selected: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+
+      if (file.name.endsWith('.zip') || file.type.includes('zip')) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          this.uploadedBundleBuffer = e.target.result;
+        };
+        reader.readAsArrayBuffer(file);
+      } else {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          document.getElementById('bundle-json-input').value = e.target.result;
+        };
+        reader.readAsText(file);
+      }
+    };
+
+    bundleFileInput?.addEventListener('change', (e) => {
+      if (e.target.files && e.target.files[0]) {
+        handleFile(e.target.files[0]);
+      }
+    });
+
+    bundleDropzone?.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      bundleDropzone.style.borderColor = 'var(--primary-color)';
+    });
+
+    bundleDropzone?.addEventListener('dragleave', () => {
+      bundleDropzone.style.borderColor = 'var(--border-color)';
+    });
+
+    bundleDropzone?.addEventListener('drop', (e) => {
+      e.preventDefault();
+      bundleDropzone.style.borderColor = 'var(--border-color)';
+      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+        handleFile(e.dataTransfer.files[0]);
+      }
+    });
+
+    confirmBundleBtn?.addEventListener('click', async () => {
+      const targetMode = document.getElementById('bundle-target-select')?.value || 'new';
+      const targetProjectId = targetMode === 'current' ? this.currentProjectId : null;
+      const jsonText = document.getElementById('bundle-json-input')?.value.trim();
+
+      try {
+        confirmBundleBtn.disabled = true;
+        confirmBundleBtn.textContent = 'Importing...';
+
+        let res;
+        const targetUrl = '/api/projects/import-bundle' + (targetProjectId ? `?projectId=${encodeURIComponent(targetProjectId)}` : '');
+
+        if (this.uploadedBundleBuffer) {
+          res = await fetch(targetUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/zip' },
+            body: this.uploadedBundleBuffer
+          }).then((r) => r.json());
+        } else if (jsonText) {
+          const parsed = JSON.parse(jsonText);
+          res = await fetch(targetUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(parsed)
+          }).then((r) => r.json());
+        } else {
+          this.toast('Please select a file or paste JSON bundle', 'error');
+          return;
+        }
+
+        if (!res.success) {
+          throw new Error(res.error || 'Import failed');
+        }
+
+        importBundleModal?.classList.remove('open');
+        this.toast(`Imported ${res.data.count} workflow(s) successfully!`, 'success');
+
+        if (res.data?.validation?.warnings && res.data.validation.warnings.length > 0) {
+          this.toast(`Import notice: ${res.data.validation.warnings[0]}`, 'warning');
+        }
+
+        this.loadProjectsList();
+        if (res.data.project) {
+          this.selectProject(res.data.project.id, res.data.project.name);
+        } else {
+          this.loadWorkflowsList();
+        }
+      } catch (err) {
+        this.toast(`Bundle import failed: ${err.message}`, 'error');
+      } finally {
+        confirmBundleBtn.disabled = false;
+        confirmBundleBtn.textContent = 'Import Project';
+      }
+    });
+
+    // Export Bundle Modal
+    document.getElementById('close-export-modal-btn')?.addEventListener('click', () => {
+      document.getElementById('export-bundle-modal')?.classList.remove('open');
+    });
+    document.getElementById('cancel-export-btn')?.addEventListener('click', () => {
+      document.getElementById('export-bundle-modal')?.classList.remove('open');
+    });
+    document.getElementById('confirm-export-download-btn')?.addEventListener('click', () => {
+      const projId = document.getElementById('export-project-id')?.value;
+      const format = document.querySelector('input[name="export-format"]:checked')?.value || 'zip';
+      if (!projId) return;
+      window.open(`/api/projects/${projId}/export?format=${format}`, '_blank');
+      document.getElementById('export-bundle-modal')?.classList.remove('open');
+    });
+
+    // Active / Archived Filter Tabs
+    const activeTab = document.getElementById('filter-active-projects-btn');
+    const archivedTab = document.getElementById('filter-archived-projects-btn');
+
+    activeTab?.addEventListener('click', () => {
+      this.projectFilter = 'active';
+      activeTab.classList.add('active');
+      archivedTab?.classList.remove('active');
+      this.loadProjectsList();
+    });
+
+    archivedTab?.addEventListener('click', () => {
+      this.projectFilter = 'archived';
+      archivedTab.classList.add('active');
+      activeTab?.classList.remove('active');
+      this.loadProjectsList();
+    });
+
+    // Search & Sort
+    document.getElementById('project-search-input')?.addEventListener('input', (e) => {
+      this.projectSearch = e.target.value.toLowerCase().trim();
+      this.renderProjectsGrid();
+    });
+
+    document.getElementById('project-sort-select')?.addEventListener('change', (e) => {
+      this.projectSort = e.target.value;
+      this.renderProjectsGrid();
+    });
+  }
+
+  async loadProjectsList() {
+    const grid = document.getElementById('projects-grid');
+    if (!grid) return;
+    grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: var(--text-muted); padding: 40px;">Loading projects...</div>';
+
+    try {
+      const isArchived = this.projectFilter === 'archived';
+      const [projectsRes, metricsRes] = await Promise.all([
+        this.api(`/api/projects?archived=${isArchived}`),
+        this.api('/api/projects/metrics/overview').catch(() => null)
+      ]);
+
+      this.projectsList = projectsRes.data || [];
+
+      // Update metrics summary cards
+      if (metricsRes && metricsRes.data) {
+        const m = metricsRes.data;
+        const totalP = document.getElementById('metric-total-projects');
+        const totalW = document.getElementById('metric-total-workflows');
+        const activeW = document.getElementById('metric-active-workflows');
+        const healthR = document.getElementById('metric-health-rate');
+
+        if (totalP) totalP.textContent = m.totalProjects;
+        if (totalW) totalW.textContent = m.totalWorkflows;
+        if (activeW) activeW.textContent = m.activeWorkflows;
+        if (healthR) healthR.textContent = `${m.overallHealthRate}%`;
+      }
+
+      this.renderProjectsGrid();
+    } catch (err) {
+      grid.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: #ef4444; padding: 40px;">Failed to load projects: ${err.message}</div>`;
+    }
+  }
+
+  renderProjectsGrid() {
+    const grid = document.getElementById('projects-grid');
+    if (!grid) return;
+
+    let items = [...this.projectsList];
+
+    // Search filter
+    if (this.projectSearch) {
+      items = items.filter((p) =>
+        (p.name && p.name.toLowerCase().includes(this.projectSearch)) ||
+        (p.description && p.description.toLowerCase().includes(this.projectSearch)) ||
+        (Array.isArray(p.labels) && p.labels.some((l) => l.toLowerCase().includes(this.projectSearch)))
+      );
+    }
+
+    // Sort
+    const [sortField, sortDir] = (this.projectSort || 'updated_at:desc').split(':');
+    items.sort((a, b) => {
+      let valA, valB;
+      if (sortField === 'name') {
+        valA = a.name.toLowerCase();
+        valB = b.name.toLowerCase();
+        return sortDir === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      if (sortField === 'created_at') {
+        valA = new Date(a.createdAt).getTime();
+        valB = new Date(b.createdAt).getTime();
+        return sortDir === 'asc' ? valA - valB : valB - valA;
+      }
+      valA = new Date(a.updatedAt).getTime();
+      valB = new Date(b.updatedAt).getTime();
+      return sortDir === 'asc' ? valA - valB : valB - valA;
+    });
+
+    if (items.length === 0) {
+      grid.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px; background: var(--bg-card); border: 1px dashed var(--border-color); border-radius: 12px;">
+          <div style="font-size: 2.2rem; margin-bottom: 10px;">📁</div>
+          <h3 style="color: #fff; margin-bottom: 6px;">No projects found</h3>
+          <p style="color: var(--text-muted); font-size: 0.88rem; max-width: 420px; margin: 0 auto 16px;">
+            ${this.projectSearch ? 'No projects match your search query.' : this.projectFilter === 'archived' ? 'No archived projects.' : 'Create a new project workspace to organize your automation pipelines.'}
+          </p>
+          <button class="btn btn-primary" onclick="document.getElementById('new-project-btn').click()">+ Create Project</button>
+        </div>
+      `;
+      return;
+    }
+
+    grid.innerHTML = '';
+    for (const proj of items) {
+      const isCurrent = proj.id === this.currentProjectId;
+      const color = proj.settings?.color || '#6366f1';
+      const healthStatus = proj.health?.status || 'idle';
+      const successRate = proj.health?.successRate ?? 100;
+      const totalRuns = proj.health?.totalRuns ?? 0;
+
+      const healthBadgeClass =
+        healthStatus === 'healthy' ? 'badge-success' :
+        healthStatus === 'warning' ? 'badge-warning' :
+        healthStatus === 'error' ? 'badge-error' : 'badge-inactive';
+
+      const labelsHtml = (proj.labels || []).map((l) => `<span class="proj-label-pill">${this.escapeHtml(l)}</span>`).join('');
+
+      const card = document.createElement('div');
+      card.className = `project-card ${isCurrent ? 'current-project' : ''}`;
+      card.style.borderTop = `4px solid ${color}`;
+
+      card.innerHTML = `
+        <div class="project-card-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="project-color-dot" style="background: ${color}; width: 10px; height: 10px; border-radius: 50%; display: inline-block;"></span>
+            <h3 class="project-card-title">${this.escapeHtml(proj.name)}</h3>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            ${isCurrent ? '<span class="badge badge-active" style="font-size: 0.7rem;">Active</span>' : ''}
+            ${proj.archived ? '<span class="badge badge-inactive" style="font-size: 0.7rem;">Archived</span>' : ''}
+          </div>
+        </div>
+
+        <p class="project-card-desc">${this.escapeHtml(proj.description || 'No description provided')}</p>
+
+        <div class="project-labels-row" style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; min-height: 20px;">
+          ${labelsHtml || '<span style="font-size: 0.75rem; color: var(--text-muted);">—</span>'}
+        </div>
+
+        <div class="project-card-stats">
+          <div class="pstat">
+            <span class="pstat-val">⚡ ${proj.workflowCount || 0}</span>
+            <span class="pstat-lbl">Workflows</span>
+          </div>
+          <div class="pstat">
+            <span class="badge ${healthBadgeClass}" style="font-size: 0.75rem;">${healthStatus.toUpperCase()} (${successRate}%)</span>
+            <span class="pstat-lbl">${totalRuns} executions</span>
+          </div>
+          <div class="pstat" style="text-align: right;">
+            <span class="pstat-val" style="font-size: 0.75rem; color: var(--text-muted);">${new Date(proj.updatedAt).toLocaleDateString()}</span>
+            <span class="pstat-lbl">Updated</span>
+          </div>
+        </div>
+
+        <div class="project-card-actions">
+          <button class="btn btn-primary btn-sm open-proj-btn" title="Open workspace">Open Workspace</button>
+          <button class="btn btn-secondary btn-sm export-proj-btn" title="Export ZIP/JSON bundle">📦 Export</button>
+          <button class="btn btn-secondary btn-sm dup-proj-btn" title="Clone project">Duplicate</button>
+          <button class="btn btn-secondary btn-sm edit-proj-btn" title="Edit project">Edit</button>
+          <button class="btn btn-secondary btn-sm toggle-archive-proj-btn" title="${proj.archived ? 'Restore project' : 'Archive project'}">${proj.archived ? 'Restore' : 'Archive'}</button>
+          ${proj.id !== 'default' ? `<button class="btn btn-danger btn-sm del-proj-btn" title="Permanently delete project">✕</button>` : ''}
+        </div>
+      `;
+
+      // Event listeners
+      card.querySelector('.open-proj-btn')?.addEventListener('click', () => {
+        this.selectProject(proj.id, proj.name);
+      });
+
+      card.querySelector('.export-proj-btn')?.addEventListener('click', () => {
+        document.getElementById('export-project-id').value = proj.id;
+        document.getElementById('export-bundle-modal')?.classList.add('open');
+      });
+
+      card.querySelector('.dup-proj-btn')?.addEventListener('click', () => {
+        document.getElementById('dup-source-id').value = proj.id;
+        document.getElementById('dup-name-input').value = `Copy of ${proj.name}`;
+        document.getElementById('duplicate-project-modal')?.classList.add('open');
+      });
+
+      card.querySelector('.edit-proj-btn')?.addEventListener('click', () => {
+        document.getElementById('project-modal-title').textContent = 'Edit Project';
+        document.getElementById('edit-project-id').value = proj.id;
+        document.getElementById('project-name-input').value = proj.name;
+        document.getElementById('project-desc-input').value = proj.description || '';
+        document.getElementById('project-labels-input').value = (proj.labels || []).join(', ');
+        document.getElementById('project-color-input').value = proj.settings?.color || '#6366f1';
+        document.getElementById('project-modal')?.classList.add('open');
+      });
+
+      card.querySelector('.toggle-archive-proj-btn')?.addEventListener('click', async () => {
+        try {
+          if (proj.archived) {
+            await this.api(`/api/projects/${proj.id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ archived: false })
+            });
+            this.toast(`Project "${proj.name}" restored`, 'success');
+          } else {
+            await this.api(`/api/projects/${proj.id}`, { method: 'DELETE' });
+            this.toast(`Project "${proj.name}" archived`, 'info');
+          }
+          this.loadProjectsList();
+        } catch (err) {
+          this.toast(`Action failed: ${err.message}`, 'error');
+        }
+      });
+
+      card.querySelector('.del-proj-btn')?.addEventListener('click', async () => {
+        if (confirm(`Permanently delete project "${proj.name}" and ALL its workflows? This action cannot be undone.`)) {
+          try {
+            await this.api(`/api/projects/${proj.id}?hard=true`, { method: 'DELETE' });
+            this.toast(`Project "${proj.name}" deleted`, 'info');
+            if (this.currentProjectId === proj.id) {
+              this.selectProject('default', 'Default Project');
+            } else {
+              this.loadProjectsList();
+            }
+          } catch (err) {
+            this.toast(`Delete failed: ${err.message}`, 'error');
+          }
+        }
+      });
+
+      grid.appendChild(card);
+    }
+  }
+
+  selectProject(projectId, projectName) {
+    this.currentProjectId = projectId;
+    this.currentProjectName = projectName || 'Project';
+    localStorage.setItem('autoflow_active_project', projectId);
+    this.updateProjectHeaderUI();
+    this.loadWorkflowsList();
+    this.switchView('workflows');
+    this.toast(`Switched workspace to "${this.currentProjectName}"`, 'info');
+  }
+
   switchView(viewName) {
     document.querySelectorAll('.nav-tab').forEach((t) => {
       t.classList.toggle('active', t.dataset.view === viewName);
@@ -386,6 +925,7 @@ class AutoFlowApp {
       vc.classList.toggle('active', vc.id === `view-${viewName}`);
     });
 
+    if (viewName === 'projects') this.loadProjectsList();
     if (viewName === 'workflows') this.loadWorkflowsList();
     if (viewName === 'executions') this.loadExecutionsList();
     if (viewName === 'credentials') this.loadCredentialsList();
@@ -455,7 +995,8 @@ class AutoFlowApp {
           name: defaultName,
           nodes: templateNodes,
           connections: templateConnections,
-          active: false
+          active: false,
+          projectId: this.currentProjectId || 'default'
         })
       });
       this.toast('New workflow created with Gemini template!', 'success');
@@ -465,6 +1006,9 @@ class AutoFlowApp {
 
   async saveCurrentWorkflow() {
     if (!this.currentWorkflow) return;
+    if (!this.currentWorkflow.projectId) {
+      this.currentWorkflow.projectId = this.currentProjectId || 'default';
+    }
     try {
       const res = await this.api(`/api/workflows/${this.currentWorkflow.id}`, {
         method: 'PUT',
@@ -641,7 +1185,7 @@ class AutoFlowApp {
       }
 
       // 2. Fetch filtered workflows
-      const queryParams = [];
+      const queryParams = [`projectId=${encodeURIComponent(this.currentProjectId || 'default')}`];
       if (this.selectedFolderId) queryParams.push(`folderId=${encodeURIComponent(this.selectedFolderId)}`);
       if (this.selectedTagId) queryParams.push(`tag=${encodeURIComponent(this.selectedTagId)}`);
       const url = '/api/workflows' + (queryParams.length > 0 ? `?${queryParams.join('&')}` : '');
@@ -651,7 +1195,7 @@ class AutoFlowApp {
       tbody.innerHTML = '';
 
       if (workflows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b;">No workflows found. Click "New Workflow" to create one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b;">No workflows found in this project. Click "+ New Workflow" to create one.</td></tr>';
         return;
       }
 
@@ -699,7 +1243,7 @@ class AutoFlowApp {
     tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Loading...</td></tr>';
 
     try {
-      const res = await this.api('/api/executions?limit=30');
+      const res = await this.api(`/api/executions?limit=30&projectId=${encodeURIComponent(this.currentProjectId || 'default')}`);
       const executions = res.data || [];
       tbody.innerHTML = '';
 
@@ -769,7 +1313,7 @@ class AutoFlowApp {
     } catch (err) {}
   }
 
-  // --- Gemini AI Copilot Implementation ---
+  // --- Antigravity CLI Copilot Implementation ---
   initAiCopilot() {
     const toggleBtn = document.getElementById('ai-assistant-toggle-btn');
     const canvasBtn = document.getElementById('canvas-ai-copilot-btn');
@@ -779,7 +1323,8 @@ class AutoFlowApp {
     const clearBtn = document.getElementById('clear-ai-chat-btn');
     const sendBtn = document.getElementById('ai-chat-send-btn');
     const input = document.getElementById('ai-chat-input');
-    const saveKeyBtn = document.getElementById('ai-save-key-btn');
+    const googleSigninBtn = document.getElementById('ai-google-signin-btn');
+    const signoutBtn = document.getElementById('ai-signout-btn');
 
     if (!drawer) return;
 
@@ -825,14 +1370,19 @@ class AutoFlowApp {
     });
 
     clearBtn?.addEventListener('click', () => {
-      if (confirm('Clear AI Copilot conversation history?')) {
+      if (confirm('Clear Antigravity Copilot conversation history?')) {
         this.clearAiChat();
       }
     });
 
-    // Quick API Key Save
-    saveKeyBtn?.addEventListener('click', async () => {
-      await this.saveQuickGeminiKey();
+    // Google Sign-In button click
+    googleSigninBtn?.addEventListener('click', async () => {
+      await this.signInWithAntigravityGoogle();
+    });
+
+    // Sign out button click
+    signoutBtn?.addEventListener('click', async () => {
+      await this.signOutAntigravity();
     });
 
     // Send button click
@@ -995,21 +1545,29 @@ class AutoFlowApp {
 
   async checkAiStatus() {
     const statusEl = document.getElementById('ai-key-status');
-    const keyBanner = document.getElementById('ai-key-banner');
+    const signinBanner = document.getElementById('ai-key-banner');
+    const accountCard = document.getElementById('ai-account-card');
+    const accountEmail = document.getElementById('ai-account-email');
 
     try {
       const res = await this.api('/api/ai/assistant/status');
       if (res.connected) {
         if (statusEl) {
-          statusEl.innerHTML = '<span class="status-indicator connected"></span> Gemini Connected';
+          const emailDisplay = res.email ? ` (${res.email.split('@')[0]})` : '';
+          statusEl.innerHTML = `<span class="status-indicator connected"></span> Antigravity Active${emailDisplay}`;
         }
-        if (keyBanner) keyBanner.style.display = 'none';
+        if (signinBanner) signinBanner.style.display = 'none';
+        if (accountCard) {
+          accountCard.style.display = 'flex';
+          if (accountEmail) accountEmail.textContent = res.email || res.user?.email || 'Google Account Connected';
+        }
         return true;
       } else {
         if (statusEl) {
-          statusEl.innerHTML = '<span class="status-indicator"></span> Gemini Key Required';
+          statusEl.innerHTML = '<span class="status-indicator"></span> Sign In Required';
         }
-        if (keyBanner) keyBanner.style.display = 'block';
+        if (signinBanner) signinBanner.style.display = 'block';
+        if (accountCard) accountCard.style.display = 'none';
         return false;
       }
     } catch {
@@ -1017,30 +1575,51 @@ class AutoFlowApp {
     }
   }
 
-  async saveQuickGeminiKey() {
-    const keyInput = document.getElementById('ai-quick-key-input');
-    const key = keyInput?.value?.trim();
-    if (!key) {
-      this.toast('Please paste your Gemini API key (e.g. AIzaSy...)', 'error');
-      return;
+  async signInWithAntigravityGoogle() {
+    const btn = document.getElementById('ai-google-signin-btn');
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = 'Connecting to Google Account...';
     }
 
     try {
-      await this.api('/api/credentials', {
+      const res = await this.api('/api/ai/assistant/signin', {
         method: 'POST',
-        body: JSON.stringify({
-          name: 'Google Gemini API Key (Copilot)',
-          type: 'gemini_api_key',
-          data: { apiKey: key }
-        })
+        body: JSON.stringify({})
       });
 
-      this.toast('Gemini API Key saved securely!', 'success');
-      keyInput.value = '';
-      await this.checkAiStatus();
-      await this.loadCredentialsList();
+      if (res.success) {
+        this.toast(`Signed in as ${res.email || 'Google Account'}! Antigravity Copilot activated.`, 'success');
+        await this.checkAiStatus();
+      } else {
+        throw new Error(res.error || 'Failed to authenticate Google Account');
+      }
     } catch (err) {
-      this.toast(`Failed to save key: ${err.message}`, 'error');
+      this.toast(`Sign-in notice: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = `
+          <svg viewBox="0 0 24 24" width="16" height="16">
+            <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17z"/>
+            <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.34 24 12 24z"/>
+            <path fill="#FBBC05" d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"/>
+            <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.34 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"/>
+          </svg>
+          Sign in with Google
+        `;
+      }
+    }
+  }
+
+  async signOutAntigravity() {
+    if (!confirm('Sign out of Antigravity Copilot?')) return;
+    try {
+      await this.api('/api/ai/assistant/signout', { method: 'POST' });
+      this.toast('Signed out of Antigravity Copilot.', 'info');
+      await this.checkAiStatus();
+    } catch (err) {
+      this.toast(`Sign-out error: ${err.message}`, 'error');
     }
   }
 
@@ -1079,8 +1658,226 @@ class AutoFlowApp {
     if (sendIcon) sendIcon.style.display = 'none';
     if (sendSpinner) sendSpinner.style.display = 'inline-block';
 
-    // 3. Temporary thinking bubble
-    const thinkingMsg = this.appendAiMessage('assistant', '<span style="color: var(--text-muted);">⚡ Gemini is generating your workflow pipeline...</span>');
+    // 3. Render Assistant Observable Build Container
+    const buildCardHtml = `
+      <div class="ai-workflow-card">
+        <div class="ai-card-title">🪐 Antigravity Observable Build Session</div>
+        <div class="ai-live-builder">
+          <div class="ai-live-builder-header">
+            <span style="font-size: 0.82rem; font-weight: 600; color: #fff;">Build Pipeline Progress</span>
+            <span class="ai-builder-status" style="color: #38bdf8; font-size: 0.8rem;">Initializing build session...</span>
+          </div>
+          <div style="width: 100%; height: 5px; background: rgba(255,255,255,0.08); border-radius: 3px; margin: 8px 0 12px; overflow: hidden;">
+            <div class="ai-builder-progress-fill" style="width: 10%; height: 100%; background: linear-gradient(90deg, #6366f1, #38bdf8); transition: width 0.3s ease;"></div>
+          </div>
+          <div class="ai-live-builder-steps">
+            <div class="ai-builder-step active">
+              <span>🧠</span> <span>Initializing Antigravity Copilot session...</span>
+            </div>
+          </div>
+        </div>
+        <div class="ai-card-actions" style="display: none; margin-top: 10px;">
+          <button class="btn btn-primary btn-sm run-ai-wf-btn">▶ Run Live</button>
+          <button class="btn btn-secondary btn-sm rebuild-ai-wf-btn">⚡ Rebuild</button>
+        </div>
+      </div>
+    `;
+
+    const assistantMsgEl = this.appendAiMessage('assistant', buildCardHtml);
+    const builderBox = assistantMsgEl?.querySelector('.ai-live-builder');
+    const statusEl = builderBox?.querySelector('.ai-builder-status');
+    const progressFill = builderBox?.querySelector('.ai-builder-progress-fill');
+    const stepsEl = builderBox?.querySelector('.ai-live-builder-steps');
+    const actionsEl = assistantMsgEl?.querySelector('.ai-card-actions');
+
+    const updateStep = (icon, text, isDone = false) => {
+      if (!stepsEl) return;
+      const prevActive = stepsEl.querySelector('.ai-builder-step.active');
+      if (prevActive) {
+        prevActive.classList.remove('active');
+        prevActive.classList.add('done');
+        const iconSpan = prevActive.querySelector('span:first-child');
+        if (iconSpan) iconSpan.textContent = '✓';
+      }
+      const newStep = document.createElement('div');
+      newStep.className = `ai-builder-step ${isDone ? 'done' : 'active'}`;
+      newStep.innerHTML = `<span>${icon}</span> <span>${text}</span>`;
+      stepsEl.appendChild(newStep);
+      stepsEl.scrollTop = stepsEl.scrollHeight;
+    };
+
+    let generatedWorkflow = null;
+
+    try {
+      this.switchView('editor');
+
+      // Connect to SSE build-stream
+      const streamRes = await fetch('/api/ai/assistant/build-stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: promptText,
+          history: this.aiChatHistory,
+          currentWorkflow: this.currentWorkflow,
+          synthesizeData: true
+        })
+      });
+
+      if (!streamRes.ok) {
+        const errJson = await streamRes.json().catch(() => ({}));
+        throw new Error(errJson.error || `HTTP ${streamRes.status}`);
+      }
+
+      const reader = streamRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEvent = 'progress';
+
+      // Reset canvas for live building
+      this.canvas.workflow = {
+        id: this.currentWorkflow?.id || 'live_wf',
+        name: 'Copilot Generated Workflow',
+        description: promptText,
+        nodes: [],
+        connections: [],
+        active: false,
+        projectId: this.currentProjectId || 'default'
+      };
+      this.canvas.render();
+      this.canvas.clearExecutionStatuses();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.substring(7).trim();
+          } else if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.substring(6));
+
+              if (data.percent && progressFill) {
+                progressFill.style.width = `${Math.min(100, Math.max(10, data.percent))}%`;
+              }
+              if (data.message && statusEl) {
+                statusEl.textContent = data.message;
+              }
+
+              if (data.stage === 'understanding') {
+                updateStep('🧠', data.message || 'Understanding request requirements...');
+              } else if (data.stage === 'planning') {
+                updateStep('📐', data.message || 'Synthesizing DAG topology and node parameters...');
+              } else if (data.stage === 'adding_nodes' && data.node) {
+                updateStep('⚡', `[Node] Adding <strong>${this.escapeHtml(data.node.name)}</strong> (${data.node.type})`);
+                this.canvas.workflow.nodes.push(data.node);
+                this.canvas.renderNode(data.node);
+                const nodeEl = document.getElementById(`node-${data.node.id}`);
+                if (nodeEl) nodeEl.classList.add('node-building');
+                this.canvas.panToNode(data.node.id);
+                await new Promise((r) => setTimeout(r, 120));
+              } else if (data.stage === 'connecting' && data.connection) {
+                updateStep('🔗', `[Wire] Connecting <strong>${this.escapeHtml(data.connection.source)}</strong> ➔ <strong>${this.escapeHtml(data.connection.target)}</strong>`);
+                this.canvas.workflow.connections.push(data.connection);
+                this.canvas.renderConnections();
+                this.canvas.svg.querySelectorAll('.connection-path').forEach((p) => p.classList.add('building-wire'));
+                await new Promise((r) => setTimeout(r, 120));
+              } else if (data.stage === 'testing') {
+                updateStep('🧪', data.message || 'Testing pipeline with synthesized sample payloads...');
+              } else if (data.stage === 'repairing') {
+                updateStep('🛠️', `[Self-Healing] Diagnosing failure & applying patch (Iteration ${data.repairIteration || 1})...`);
+              } else if (currentEvent === 'complete' || data.stage === 'complete') {
+                generatedWorkflow = data.workflow;
+                if (statusEl) {
+                  statusEl.textContent = '✓ Workflow Verified & Built';
+                  statusEl.style.color = '#4ade80';
+                }
+                if (progressFill) progressFill.style.width = '100%';
+                updateStep('✅', `Production verified: ${data.workflow?.nodes?.length || 0} nodes connected and tested.`, true);
+              }
+            } catch (parseErr) {}
+          }
+        }
+      }
+
+      // Cleanup building styles
+      document.querySelectorAll('.canvas-node').forEach((el) => el.classList.remove('node-building'));
+      this.canvas.svg.querySelectorAll('.connection-path').forEach((p) => p.classList.remove('building-wire'));
+
+      if (generatedWorkflow) {
+        let savedWf;
+        if (this.currentWorkflow && this.currentWorkflow.id && !this.currentWorkflow.id.startsWith('live_wf')) {
+          const res = await this.api(`/api/workflows/${this.currentWorkflow.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: generatedWorkflow.name || this.currentWorkflow.name,
+              description: generatedWorkflow.description || this.currentWorkflow.description,
+              nodes: generatedWorkflow.nodes,
+              connections: generatedWorkflow.connections,
+              active: this.currentWorkflow.active || false,
+              projectId: this.currentProjectId || 'default'
+            })
+          });
+          savedWf = res.data;
+        } else {
+          const res = await this.api('/api/workflows', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: generatedWorkflow.name || 'AI Generated Workflow',
+              description: generatedWorkflow.description,
+              nodes: generatedWorkflow.nodes,
+              connections: generatedWorkflow.connections,
+              active: false,
+              projectId: this.currentProjectId || 'default'
+            })
+          });
+          savedWf = res.data;
+        }
+
+        this.openWorkflow(savedWf);
+        this.loadWorkflowsList();
+        this.toast(`✨ Copilot successfully built "${savedWf.name}"!`, 'success');
+
+        if (actionsEl) {
+          actionsEl.style.display = 'flex';
+          actionsEl.querySelector('.run-ai-wf-btn')?.addEventListener('click', async () => {
+            this.openFullscreenViewer();
+            await this.executeCurrentWorkflowStream();
+          });
+          actionsEl.querySelector('.rebuild-ai-wf-btn')?.addEventListener('click', () => {
+            this.sendAiPrompt(promptText);
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Build-stream notice, falling back to standard copilot generation:', err);
+      if (assistantMsgEl) assistantMsgEl.remove();
+
+      if (err.message && (err.message.includes('Google Account sign-in') || err.message.includes('sign in') || err.message.includes('API key') || err.message.includes('needsSignIn'))) {
+        this.appendAiMessage('assistant', `
+          <div style="color: #fca5a5;">
+            ⚠️ <strong>Google Sign-In Required</strong><br/>
+            Please click <strong>"Sign in with Google"</strong> in the banner above to activate Antigravity Copilot and build workflows.
+          </div>
+        `);
+        const banner = document.getElementById('ai-key-banner');
+        if (banner) banner.style.display = 'block';
+      } else {
+        await this.fallbackAiChat(promptText);
+      }
+    } finally {
+      if (sendBtn) sendBtn.disabled = false;
+      if (sendIcon) sendIcon.style.display = 'inline-block';
+      if (sendSpinner) sendSpinner.style.display = 'none';
+    }
+  }
+
+  async fallbackAiChat(promptText) {
+    const thinkingMsg = this.appendAiMessage('assistant', '<span style="color: var(--text-muted); display: inline-flex; align-items: center; gap: 6px;"><span>🪐</span> Antigravity is generating your workflow pipeline...</span>');
 
     try {
       const res = await this.api('/api/ai/assistant/chat', {
@@ -1108,7 +1905,6 @@ class AutoFlowApp {
       });
       this.saveAiChatState();
 
-      // Build Assistant Response Card
       let html = `<p>${aiData.reply ? aiData.reply.replace(/\n/g, '<br/>') : 'Here is the generated workflow:'}</p>`;
 
       if (aiData.workflow && Array.isArray(aiData.workflow.nodes) && aiData.workflow.nodes.length > 0) {
@@ -1146,14 +1942,10 @@ class AutoFlowApp {
 
       const msgEl = this.appendAiMessage('assistant', html);
 
-      // Auto-build the workflow on canvas in real-time node-by-node!
       if (aiData.workflow && msgEl) {
         const builderBox = msgEl.querySelector('.ai-live-builder');
-
-        // Automatically trigger live real-time construction
         await this.buildWorkflowInRealTime(aiData.workflow, true, builderBox);
 
-        // Bind interactive buttons
         msgEl.querySelector('.rebuild-ai-wf-btn')?.addEventListener('click', async () => {
           await this.buildWorkflowInRealTime(aiData.workflow, true, builderBox);
         });
@@ -1170,22 +1962,7 @@ class AutoFlowApp {
       }
     } catch (err) {
       thinkingMsg?.remove();
-      if (err.message && err.message.includes('Gemini API key')) {
-        this.appendAiMessage('assistant', `
-          <div style="color: #fca5a5;">
-            ⚠️ <strong>Gemini API Key Required</strong><br/>
-            Please enter your Gemini API key in the banner above or in the Credentials tab to enable workflow generation.
-          </div>
-        `);
-        const banner = document.getElementById('ai-key-banner');
-        if (banner) banner.style.display = 'block';
-      } else {
-        this.appendAiMessage('assistant', `<span style="color: #fca5a5;">⚠️ Error generating workflow: ${err.message}</span>`);
-      }
-    } finally {
-      if (sendBtn) sendBtn.disabled = false;
-      if (sendIcon) sendIcon.style.display = 'inline-block';
-      if (sendSpinner) sendSpinner.style.display = 'none';
+      this.appendAiMessage('assistant', `<span style="color: #fca5a5;">⚠️ Error generating workflow: ${err.message}</span>`);
     }
   }
 
@@ -1312,7 +2089,8 @@ class AutoFlowApp {
               description: aiWorkflow.description || this.currentWorkflow.description,
               nodes: finalNodes,
               connections: finalConnections,
-              active: this.currentWorkflow.active || false
+              active: this.currentWorkflow.active || false,
+              projectId: this.currentWorkflow.projectId || this.currentProjectId || 'default'
             })
           });
           savedWf = res.data;
@@ -1324,7 +2102,8 @@ class AutoFlowApp {
               description: aiWorkflow.description,
               nodes: finalNodes,
               connections: finalConnections,
-              active: false
+              active: false,
+              projectId: this.currentProjectId || 'default'
             })
           });
           savedWf = res.data;
@@ -1351,7 +2130,8 @@ class AutoFlowApp {
           description: aiWorkflow.description || this.currentWorkflow.description,
           nodes: aiWorkflow.nodes,
           connections: aiWorkflow.connections || [],
-          active: this.currentWorkflow.active || false
+          active: this.currentWorkflow.active || false,
+          projectId: this.currentWorkflow.projectId || this.currentProjectId || 'default'
         };
         const res = await this.api(`/api/workflows/${this.currentWorkflow.id}`, {
           method: 'PUT',
@@ -1367,7 +2147,8 @@ class AutoFlowApp {
             description: aiWorkflow.description,
             nodes: aiWorkflow.nodes,
             connections: aiWorkflow.connections || [],
-            active: false
+            active: false,
+            projectId: this.currentProjectId || 'default'
           })
         });
         savedWf = res.data;
@@ -2058,7 +2839,7 @@ class AutoFlowApp {
 
     genBtn?.addEventListener('click', async () => {
       genBtn.disabled = true;
-      genBtn.innerHTML = '<span class="fs-spin">⏳</span> Generating with Gemini...';
+      genBtn.innerHTML = '<span class="fs-spin">⏳</span> Generating with Antigravity...';
       try {
         const res = await this.api('/api/ai/assistant/chat', {
           method: 'POST',
@@ -2071,7 +2852,7 @@ class AutoFlowApp {
         const match = text.match(/\{[\s\S]*\}/);
         if (match) {
           textarea.value = JSON.stringify(JSON.parse(match[0]), null, 2);
-          this.toast('Realistic payload synthesized by Gemini!', 'success');
+          this.toast('Realistic payload synthesized by Antigravity!', 'success');
         } else {
           textarea.value = JSON.stringify({
             orderId: 'ORD-' + Math.floor(Math.random() * 89999 + 10000),
@@ -2090,7 +2871,7 @@ class AutoFlowApp {
         }, null, 2);
       } finally {
         genBtn.disabled = false;
-        genBtn.innerHTML = '✨ Generate Realistic Data with Gemini';
+        genBtn.innerHTML = '✨ Generate Realistic Data with Antigravity';
       }
     });
 

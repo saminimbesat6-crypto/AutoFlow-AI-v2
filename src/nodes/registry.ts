@@ -154,6 +154,10 @@ export class NodeRegistry {
     this.nodes.set(node.type, node);
   }
 
+  has(type: string): boolean {
+    return this.nodes.has(type);
+  }
+
   get(type: string): BaseNode | undefined {
     return this.nodes.get(type);
   }

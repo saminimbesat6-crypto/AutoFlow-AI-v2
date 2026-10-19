@@ -8,10 +8,11 @@ export function createExecutionRouter(db: DatabaseSync, executor: WorkflowExecut
   const router = Router();
   const retentionManager = new ExecutionRetentionManager(db);
 
-  // List executions with optional filtering by workflowId or status
+  // List executions with optional filtering by workflowId, projectId, or status
   router.get('/', (req: Request, res: Response) => {
     try {
       const workflowId = req.query.workflowId as string | undefined;
+      const projectId = req.query.projectId as string | undefined;
       const status = req.query.status as string | undefined;
       const limit = parseInt(req.query.limit as string) || 50;
 
@@ -22,6 +23,10 @@ export function createExecutionRouter(db: DatabaseSync, executor: WorkflowExecut
       if (workflowId) {
         conditions.push('workflow_id = ?');
         params.push(workflowId);
+      }
+      if (projectId) {
+        conditions.push('(project_id = ? OR workflow_id IN (SELECT id FROM workflows WHERE project_id = ?))');
+        params.push(projectId, projectId);
       }
       if (status) {
         conditions.push('status = ?');
@@ -42,6 +47,7 @@ export function createExecutionRouter(db: DatabaseSync, executor: WorkflowExecut
         id: r.id,
         workflowId: r.workflow_id,
         workflowName: r.workflow_name,
+        projectId: r.project_id || 'default',
         mode: r.mode,
         status: r.status,
         startedAt: r.started_at,

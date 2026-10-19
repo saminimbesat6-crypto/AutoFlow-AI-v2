@@ -17,12 +17,13 @@ export function createWorkflowRouter(
   const versionRepo = new WorkflowVersionRepository();
   const tagRepo = new TagRepository();
 
-  // List all workflows (with optional tag and folder filters)
+  // List all workflows (with optional tag, folder, and project filters)
   router.get('/', (req: Request, res: Response) => {
     try {
       const folderId = req.query.folderId ? String(req.query.folderId) : undefined;
       const tagId = req.query.tag ? String(req.query.tag) : undefined;
-      const workflows = repo.list({ folderId, tagId });
+      const projectId = req.query.projectId ? String(req.query.projectId) : undefined;
+      const workflows = repo.list({ folderId, tagId, projectId });
       res.json({ success: true, data: workflows });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
@@ -32,7 +33,7 @@ export function createWorkflowRouter(
   // Create new workflow
   router.post('/', (req: Request, res: Response) => {
     try {
-      const { name, description, nodes, connections, settings, active } = req.body;
+      const { name, description, nodes, connections, settings, active, projectId, folderId, tags } = req.body;
       if (!name) {
         return res.status(400).json({ success: false, error: 'Workflow name is required' });
       }
@@ -40,6 +41,9 @@ export function createWorkflowRouter(
       const created = repo.create({
         name,
         description,
+        projectId: projectId || 'default',
+        folderId: folderId || undefined,
+        tags: Array.isArray(tags) ? tags : undefined,
         nodes: nodes || [],
         connections: connections || [],
         settings: settings || {},
@@ -204,9 +208,11 @@ export function createWorkflowRouter(
         workflowToCreate = payload;
       }
 
+      const projectId = req.query.projectId ? String(req.query.projectId) : (workflowToCreate.projectId || 'default');
       const created = repo.create({
         name: workflowToCreate.name || 'Imported Workflow',
         description: workflowToCreate.description,
+        projectId,
         nodes: workflowToCreate.nodes || [],
         connections: workflowToCreate.connections || [],
         settings: workflowToCreate.settings || {},

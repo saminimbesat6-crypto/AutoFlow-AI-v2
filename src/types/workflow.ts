@@ -62,6 +62,7 @@ export interface Workflow {
   id: string;
   name: string;
   description?: string;
+  projectId?: string;
   folderId?: string;
   tags?: string[];
   nodes: WorkflowNode[];
@@ -123,6 +124,7 @@ export interface ExecutionRecord {
   id: string;
   workflowId: string;
   workflowName: string;
+  projectId?: string;
   mode: ExecutionMode;
   status: ExecutionStatus;
   startedAt: string;
