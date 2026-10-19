@@ -39,6 +39,12 @@ import { PostgresNode } from './apps/postgres';
 import { RedisNode } from './apps/redis';
 import { AwsS3Node } from './apps/aws-s3';
 import { NotionNode } from './apps/notion';
+import { HubSpotNode } from './apps/hubspot';
+import { SalesforceNode } from './apps/salesforce';
+import { ShopifyNode } from './apps/shopify';
+import { JiraNode } from './apps/jira';
+import { TwilioNode } from './apps/twilio';
+import { SupabaseNode } from './apps/supabase';
 
 import { GeminiNode } from './ai/gemini-node';
 import { AiAgentNode } from './ai/ai-agent-node';
@@ -118,7 +124,21 @@ export class NodeRegistry {
 
     // Enterprise Integrations Pack (Full n8n Parity Catalog: 400+ Nodes)
     for (const manifest of ALL_INTEGRATION_MANIFESTS) {
-      this.register(new DeclarativeNode(manifest));
+      if (manifest.type === 'hubspot') {
+        this.register(new HubSpotNode(manifest));
+      } else if (manifest.type === 'salesforce') {
+        this.register(new SalesforceNode(manifest));
+      } else if (manifest.type === 'shopify') {
+        this.register(new ShopifyNode(manifest));
+      } else if (manifest.type === 'jira') {
+        this.register(new JiraNode(manifest));
+      } else if (manifest.type === 'twilio') {
+        this.register(new TwilioNode(manifest));
+      } else if (manifest.type === 'supabase') {
+        this.register(new SupabaseNode(manifest));
+      } else {
+        this.register(new DeclarativeNode(manifest));
+      }
     }
   }
 

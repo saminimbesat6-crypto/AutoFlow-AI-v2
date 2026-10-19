@@ -1,6 +1,7 @@
 import { BaseNode, NodeCategory } from './base';
 import { DataItem, NodeOutput, PortDefinition, PropertyDefinition } from '../types/workflow';
 import { NodeExecutionContext } from '../engine/context';
+import { safeFetch } from '../utils/network';
 
 export interface DeclarativeOperation {
   name: string;
@@ -140,6 +141,47 @@ export class DeclarativeNode extends BaseNode {
         }
       }
     }
+
+    // 6. Enterprise Superpowers: Auto-Pagination, Rate-Limit Resilience & Fault Tolerance
+    props.push({
+      name: 'autoPaginate',
+      displayName: 'Auto-Paginate Results',
+      type: 'boolean',
+      default: false,
+      description: 'Automatically follow Link headers, next URLs, or cursor tokens to fetch subsequent pages'
+    });
+
+    props.push({
+      name: 'maxPages',
+      displayName: 'Max Pages to Fetch',
+      type: 'number',
+      default: 5,
+      description: 'Maximum number of pages to retrieve when auto-pagination is enabled'
+    });
+
+    props.push({
+      name: 'continueOnFail',
+      displayName: 'Continue on Fail',
+      type: 'boolean',
+      default: false,
+      description: 'Emit error payload as an output item instead of terminating the entire workflow DAG'
+    });
+
+    props.push({
+      name: 'ignore404',
+      displayName: 'Ignore 404 (Not Found)',
+      type: 'boolean',
+      default: false,
+      description: 'Treat HTTP 404 responses as an empty list instead of an execution failure'
+    });
+
+    props.push({
+      name: 'retryOnFailure',
+      displayName: 'Retry on Failure',
+      type: 'number',
+      default: 0,
+      description: 'Number of times to retry on transient 5xx server or network connection errors'
+    });
 
     return props;
   }
@@ -336,54 +378,172 @@ export class DeclarativeNode extends BaseNode {
 
       const finalUrl = urlObj.toString();
 
-      // Execute request
-      const response = await fetch(finalUrl, {
-        method: op.method,
-        headers,
-        body: requestBody
-      });
+      const autoPaginate = context.getNodeParameter('autoPaginate', i, false);
+      const maxPages = context.getNodeParameter('maxPages', i, 5);
+      const continueOnFail = context.getNodeParameter('continueOnFail', i, false);
+      const ignore404 = context.getNodeParameter('ignore404', i, false);
+      const retryOnFailure = context.getNodeParameter('retryOnFailure', i, 0);
 
-      const responseText = await response.text();
-      let responseJson: any;
-      try {
-        responseJson = JSON.parse(responseText);
-      } catch {
-        responseJson = { text: responseText };
-      }
+      const allowPrivate = process.env.NODE_ENV === 'test' || process.env.ALLOW_PRIVATE_NETWORK === 'true';
 
-      if (!response.ok) {
-        const errMsg = responseJson.message || responseJson.error || responseJson.title || responseText.slice(0, 300);
-        throw new Error(`${this.name} API error (${response.status}): ${errMsg}`);
-      }
+      const fetchWithRetry = async (url: string, init: RequestInit, retriesRemaining = retryOnFailure, rateLimitRetries = 3): Promise<Response> => {
+        try {
+          const res = await safeFetch(url, init, allowPrivate);
+          
+          // Check 429 Rate Limit
+          if (res.status === 429 && rateLimitRetries > 0) {
+            const retryAfter = res.headers.get('retry-after');
+            let waitMs = 1500 * (4 - rateLimitRetries);
+            if (retryAfter) {
+              const parsed = parseInt(retryAfter, 10);
+              if (!isNaN(parsed) && parsed > 0) {
+                waitMs = Math.min(parsed * 1000, 10000);
+              }
+            }
+            await new Promise((resolve) => setTimeout(resolve, waitMs));
+            return fetchWithRetry(url, init, retriesRemaining, rateLimitRetries - 1);
+          }
 
-      // Extract items or payload
-      if (op.itemsPath && op.itemsPath.trim()) {
-        const parts = op.itemsPath.split('.');
-        let current = responseJson;
-        let pathFound = true;
-        for (const p of parts) {
-          if (current && typeof current === 'object' && p in current) {
-            current = current[p];
-          } else {
-            pathFound = false;
+          // Check transient 5xx server errors
+          if ([500, 502, 503, 504].includes(res.status) && retriesRemaining > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            return fetchWithRetry(url, init, retriesRemaining - 1, rateLimitRetries);
+          }
+
+          return res;
+        } catch (err: any) {
+          if (retriesRemaining > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            return fetchWithRetry(url, init, retriesRemaining - 1, rateLimitRetries);
+          }
+          throw err;
+        }
+      };
+
+      let currentUrl: string | null = finalUrl;
+      let pageCount = 0;
+      const pageResults: any[] = [];
+
+      while (currentUrl && pageCount < maxPages) {
+        pageCount++;
+
+        let response: Response;
+        try {
+          response = await fetchWithRetry(currentUrl, {
+            method: op.method,
+            headers,
+            body: requestBody
+          });
+        } catch (netErr: any) {
+          if (continueOnFail) {
+            results.push({ json: { error: netErr.message, failed: true, url: currentUrl }, pairedItem: i });
             break;
           }
+          throw netErr;
         }
-        if (pathFound && Array.isArray(current) && current.length > 0) {
-          for (const subItem of current) {
-            results.push({ json: typeof subItem === 'object' && subItem !== null ? subItem : { value: subItem }, pairedItem: i });
+
+        if (response.status === 404 && ignore404) {
+          break;
+        }
+
+        const responseText = await response.text();
+        let responseJson: any;
+        try {
+          responseJson = JSON.parse(responseText);
+        } catch {
+          responseJson = { text: responseText };
+        }
+
+        if (!response.ok) {
+          const errMsg = responseJson.message || responseJson.error || responseJson.title || responseText.slice(0, 300);
+          if (continueOnFail) {
+            results.push({ json: { error: errMsg, statusCode: response.status, failed: true, url: currentUrl }, pairedItem: i });
+            break;
           }
-        } else if (pathFound && current !== undefined && current !== null && !Array.isArray(current)) {
-          results.push({ json: typeof current === 'object' ? current : { value: current }, pairedItem: i });
+          throw new Error(`${this.name} API error (${response.status}): ${errMsg}`);
+        }
+
+        // Extract items or payload
+        let extracted: any[] = [];
+        if (op.itemsPath && op.itemsPath.trim()) {
+          const parts = op.itemsPath.split('.');
+          let current = responseJson;
+          let pathFound = true;
+          for (const p of parts) {
+            if (current && typeof current === 'object' && p in current) {
+              current = current[p];
+            } else {
+              pathFound = false;
+              break;
+            }
+          }
+          if (pathFound && Array.isArray(current) && current.length > 0) {
+            extracted = current;
+          } else if (pathFound && current !== undefined && current !== null && !Array.isArray(current)) {
+            extracted = [current];
+          } else {
+            extracted = [responseJson];
+          }
+        } else if (Array.isArray(responseJson)) {
+          extracted = responseJson;
         } else {
-          results.push({ json: responseJson, pairedItem: i });
+          extracted = [responseJson];
         }
-      } else if (Array.isArray(responseJson)) {
-        for (const subItem of responseJson) {
-          results.push({ json: typeof subItem === 'object' && subItem !== null ? subItem : { value: subItem }, pairedItem: i });
+
+        for (const subItem of extracted) {
+          pageResults.push(typeof subItem === 'object' && subItem !== null ? subItem : { value: subItem });
         }
-      } else {
-        results.push({ json: responseJson, pairedItem: i });
+
+        if (!autoPaginate) {
+          break;
+        }
+
+        // Detect next page link or cursor
+        let nextTargetUrl: string | null = null;
+        const linkHeader = response.headers.get('link');
+        if (linkHeader) {
+          const match = linkHeader.match(/<([^>]+)>;\s*rel="next"/i);
+          if (match) {
+            nextTargetUrl = match[1];
+          }
+        }
+
+        if (!nextTargetUrl && responseJson && typeof responseJson === 'object') {
+          if (responseJson.paging?.next?.link) {
+            nextTargetUrl = responseJson.paging.next.link;
+          } else if (responseJson.nextRecordsUrl) {
+            nextTargetUrl = responseJson.nextRecordsUrl.startsWith('http')
+              ? responseJson.nextRecordsUrl
+              : `${base}${responseJson.nextRecordsUrl}`;
+          } else if (responseJson['@odata.nextLink']) {
+            nextTargetUrl = responseJson['@odata.nextLink'];
+          } else if (responseJson.next_page_url) {
+            nextTargetUrl = responseJson.next_page_url;
+          } else if (responseJson.pagination?.next) {
+            nextTargetUrl = responseJson.pagination.next;
+          } else if (responseJson.paging?.next?.after) {
+            const cursor = responseJson.paging.next.after;
+            const parsedCur: URL = new URL(currentUrl as string);
+            parsedCur.searchParams.set('after', cursor);
+            nextTargetUrl = parsedCur.toString();
+          } else if (responseJson.next_cursor) {
+            const cursor = responseJson.next_cursor;
+            const parsedCur: URL = new URL(currentUrl as string);
+            parsedCur.searchParams.set('starting_after', cursor);
+            parsedCur.searchParams.set('cursor', cursor);
+            nextTargetUrl = parsedCur.toString();
+          }
+        }
+
+        if (extracted.length === 0 || nextTargetUrl === currentUrl || !nextTargetUrl) {
+          break;
+        }
+
+        currentUrl = nextTargetUrl;
+      }
+
+      for (const resItem of pageResults) {
+        results.push({ json: resItem, pairedItem: i });
       }
     }
 
