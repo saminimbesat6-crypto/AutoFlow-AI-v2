@@ -18,6 +18,7 @@ const N8N_TO_AUTOFLOW_MAP: Record<string, string> = {
   'n8n-nodes-base.merge': 'merge',
   'n8n-nodes-base.code': 'code',
   'n8n-nodes-base.function': 'code',
+  'n8n-nodes-base.stickyNote': 'sticky-note',
   '@n8n/n8n-nodes-langchain.agent': 'ai-agent',
   '@n8n/n8n-nodes-langchain.openAi': 'gemini'
 };
@@ -35,6 +36,7 @@ const AUTOFLOW_TO_N8N_MAP: Record<string, string> = {
   'set-data': 'n8n-nodes-base.set',
   'merge': 'n8n-nodes-base.merge',
   'code': 'n8n-nodes-base.code',
+  'sticky-note': 'n8n-nodes-base.stickyNote',
   'gemini': 'n8n-nodes-base.httpRequest',
   'ai-agent': '@n8n/n8n-nodes-langchain.agent'
 };

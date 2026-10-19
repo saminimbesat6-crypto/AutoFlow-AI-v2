@@ -131,5 +131,91 @@ export function runMigrations(db: DatabaseSync): void {
     const insertStmt3 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
     insertStmt3.run(3, new Date().toISOString());
   }
+
+  // Migration 4: Workflow Versions & Rollback History
+  const check4 = stmt.get(4);
+  if (!check4) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workflow_versions (
+        id TEXT PRIMARY KEY,
+        workflow_id TEXT NOT NULL,
+        version_num INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        description TEXT,
+        nodes TEXT NOT NULL,
+        connections TEXT NOT NULL,
+        settings TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_workflow_versions_wf ON workflow_versions(workflow_id);
+      CREATE INDEX IF NOT EXISTS idx_workflow_versions_num ON workflow_versions(workflow_id, version_num);
+    `);
+
+    const insertStmt4 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+    insertStmt4.run(4, new Date().toISOString());
+  }
+
+  // Migration 5: Workflow Folders, Tags & Taxonomy
+  const check5 = stmt.get(5);
+  if (!check5) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS workflow_tags (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        color TEXT NOT NULL DEFAULT '#3b82f6',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_tag_mappings (
+        workflow_id TEXT NOT NULL,
+        tag_id TEXT NOT NULL,
+        PRIMARY KEY (workflow_id, tag_id),
+        FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+        FOREIGN KEY (tag_id) REFERENCES workflow_tags(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS workflow_folders (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        parent_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tag_mappings_wf ON workflow_tag_mappings(workflow_id);
+      CREATE INDEX IF NOT EXISTS idx_tag_mappings_tag ON workflow_tag_mappings(tag_id);
+    `);
+
+    try {
+      db.exec(`ALTER TABLE workflows ADD COLUMN folder_id TEXT;`);
+    } catch {}
+
+    const insertStmt5 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+    insertStmt5.run(5, new Date().toISOString());
+  }
+
+  // Migration 6: Execution Log Pruning & Retention Policies
+  const check6 = stmt.get(6);
+  if (!check6) {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS system_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const insertSetting = db.prepare(`INSERT OR REPLACE INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)`);
+    const nowIso = new Date().toISOString();
+    insertSetting.run('execution_retention_enabled', 'true', nowIso);
+    insertSetting.run('execution_retention_days', '14', nowIso);
+    insertSetting.run('execution_retention_prune_success_only', 'false', nowIso);
+    insertSetting.run('execution_retention_batch_size', '500', nowIso);
+
+    const insertStmt6 = db.prepare('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)');
+    insertStmt6.run(6, nowIso);
+  }
 }
 

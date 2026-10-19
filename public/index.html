@@ -64,9 +64,13 @@
           <button class="btn btn-secondary btn-sm" id="workflow-active-toggle">Inactive</button>
         </div>
         <div class="toolbar-buttons">
+          <button class="btn btn-secondary btn-sm" id="canvas-undo-btn" title="Undo (Ctrl+Z)">↶</button>
+          <button class="btn btn-secondary btn-sm" id="canvas-redo-btn" title="Redo (Ctrl+Y)">↷</button>
+          <button class="btn btn-secondary btn-sm" id="canvas-add-note-btn" title="Add Sticky Note to Canvas">📝 Note</button>
           <button class="btn btn-secondary btn-sm" id="canvas-zoom-fit-btn" title="Zoom to fit workflow">⛶ Fit</button>
           <button class="btn btn-ai-pill btn-sm desktop-only" id="canvas-ai-copilot-btn">💬 Copilot Side</button>
           <button class="btn btn-secondary btn-sm desktop-only" id="canvas-fullscreen-btn" title="Fullscreen view of workflow chart & output">⛶ Fullscreen</button>
+          <button class="btn btn-secondary btn-sm" id="canvas-history-btn" title="Version History & Rollback">🕒 History</button>
           <button class="btn btn-secondary btn-sm" id="save-workflow-btn">💾 Save</button>
           <button class="btn btn-primary btn-sm" id="execute-workflow-btn">▶ Test</button>
         </div>
@@ -89,6 +93,17 @@
         </div>
         <div style="padding: 12px 16px; border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end;">
           <button class="btn btn-danger btn-sm" id="drawer-delete-node-btn">Delete Node</button>
+        </div>
+      </div>
+
+      <!-- Version History Drawer -->
+      <div class="version-history-drawer" id="version-history-drawer">
+        <div class="drawer-header">
+          <div class="drawer-title">🕒 Version History</div>
+          <button class="btn-icon" id="close-history-btn">✕</button>
+        </div>
+        <div class="drawer-body" id="version-history-body" style="padding: 12px; overflow-y: auto;">
+          <div id="version-history-list"></div>
         </div>
       </div>
 
@@ -194,10 +209,19 @@
         <h1 class="dashboard-title">Workflows</h1>
         <button class="btn btn-primary" id="new-workflow-btn">+ New Workflow</button>
       </div>
+      <div class="dashboard-filter-bar" style="display: flex; gap: 10px; margin-bottom: 14px; align-items: center; flex-wrap: wrap;">
+        <select id="workflows-folder-filter" class="form-control" style="width: auto; min-width: 160px; padding: 6px 10px; font-size: 0.85rem;">
+          <option value="">📁 All Folders</option>
+        </select>
+        <div id="workflows-tags-bar" style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+          <!-- Tag chips injected dynamically -->
+        </div>
+      </div>
       <table class="data-table">
         <thead>
           <tr>
             <th>Workflow Name</th>
+            <th>Folder / Tags</th>
             <th>Status</th>
             <th>Nodes</th>
             <th>Last Updated</th>
@@ -214,6 +238,9 @@
     <div class="dashboard-view">
       <div class="dashboard-header">
         <h1 class="dashboard-title">Execution History</h1>
+        <div style="display: flex; gap: 8px; align-items: center;">
+          <button class="btn btn-secondary btn-sm" id="prune-executions-btn" title="Prune executions older than 14 days">🧹 Prune Logs</button>
+        </div>
       </div>
       <table class="data-table">
         <thead>

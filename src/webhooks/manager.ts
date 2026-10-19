@@ -125,6 +125,180 @@ export class WebhookManager {
     }
   }
 
+  private testListeners: Map<string, any> = new Map();
+
+  registerTestListener(
+    workflowId: string,
+    nodeId: string,
+    path: string,
+    method = 'POST',
+    timeoutMs = 120000
+  ): Promise<{ success: boolean; event?: any; outputData?: any; error?: string }> {
+    const key = `${method.toUpperCase()}:${path}`;
+    
+    // Clear any previous listener for this route
+    if (this.testListeners.has(key)) {
+      const prev = this.testListeners.get(key);
+      clearTimeout(prev.timer);
+      prev.resolve({ success: false, error: 'Replaced by a newer listener' });
+      this.testListeners.delete(key);
+    }
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        this.testListeners.delete(key);
+        resolve({ success: false, error: 'Timed out waiting for test webhook event (120s)' });
+      }, timeoutMs);
+
+      this.testListeners.set(key, {
+        id: uuidv4(),
+        workflowId,
+        nodeId,
+        path,
+        method: method.toUpperCase(),
+        resolve,
+        timer
+      });
+    });
+  }
+
+  cancelTestListener(path: string, method = 'POST'): void {
+    const key = `${method.toUpperCase()}:${path}`;
+    const listener = this.testListeners.get(key);
+    if (listener) {
+      clearTimeout(listener.timer);
+      listener.resolve({ success: false, error: 'Cancelled by user' });
+      this.testListeners.delete(key);
+    }
+  }
+
+  async handleTestWebhook(
+    path: string,
+    method: string,
+    reqData: { body: any; headers: any; query: any; params: any }
+  ): Promise<{ success: boolean; data?: any; error?: string; statusCode: number }> {
+    const normMethod = method.toUpperCase();
+    const key = `${normMethod}:${path}`;
+    const anyKey = `ANY:${path}`;
+    const wildcardKey = `*:${path}`;
+
+    const listener = this.testListeners.get(key) || this.testListeners.get(anyKey) || this.testListeners.get(wildcardKey);
+
+    const event = {
+      path,
+      method: normMethod,
+      body: reqData.body,
+      headers: reqData.headers,
+      query: reqData.query,
+      params: reqData.params,
+      timestamp: new Date().toISOString()
+    };
+
+    const triggerItem: DataItem = {
+      json: {
+        body: reqData.body,
+        headers: reqData.headers,
+        query: reqData.query,
+        params: reqData.params,
+        timestamp: event.timestamp
+      }
+    };
+
+    if (listener) {
+      clearTimeout(listener.timer);
+      this.testListeners.delete(key);
+      this.testListeners.delete(anyKey);
+      this.testListeners.delete(wildcardKey);
+
+      // Execute single node to produce output data
+      const workflow = this.workflowRepo.getById(listener.workflowId);
+      let outputData: any = [[triggerItem]];
+
+      if (workflow) {
+        const node = workflow.nodes.find((n) => n.id === listener.nodeId);
+        if (node) {
+          try {
+            const { NodeRegistry } = require('../nodes/registry');
+            const { ExecutionContext } = require('../engine/context');
+            const nodeDef = NodeRegistry.getInstance().get(node.type);
+            if (nodeDef) {
+              const execCtx = new ExecutionContext();
+              const nodeCtx = execCtx.createNodeContext(node, [triggerItem], 0);
+              outputData = await nodeDef.execute(nodeCtx);
+            }
+          } catch (e: any) {
+            console.warn('[WebhookManager] Error executing test node:', e.message);
+          }
+        }
+      }
+
+      listener.resolve({
+        success: true,
+        event,
+        outputData
+      });
+
+      return {
+        success: true,
+        data: {
+          message: 'Test event captured and dispatched to editor listener',
+          event
+        },
+        statusCode: 200
+      };
+    }
+
+    // Check if any workflow in the repository defines this webhook path
+    const allWorkflows = this.workflowRepo.list();
+    let matchingWf: Workflow | undefined;
+    let matchingNode: any;
+
+    for (const wf of allWorkflows) {
+      for (const node of wf.nodes) {
+        if (node.type === 'webhook-trigger') {
+          const nodePath = node.parameters?.path || `webhook-${node.id.slice(0, 8)}`;
+          const nodeMethod = (node.parameters?.httpMethod || 'POST').toUpperCase();
+          if (nodePath === path && (nodeMethod === 'ANY' || nodeMethod === normMethod)) {
+            matchingWf = wf;
+            matchingNode = node;
+            break;
+          }
+        }
+      }
+      if (matchingWf) break;
+    }
+
+    if (!matchingWf) {
+      return {
+        success: false,
+        error: `No test listener or workflow found for test webhook path "/webhook-test/${path}"`,
+        statusCode: 404
+      };
+    }
+
+    try {
+      const execution = await this.executor.execute(matchingWf, {
+        mode: 'test',
+        startNodeId: matchingNode.id,
+        initialData: [triggerItem]
+      });
+
+      return {
+        success: execution.status === 'success',
+        data: {
+          message: 'Executed workflow in test mode with incoming payload',
+          executionId: execution.id,
+          status: execution.status,
+          event
+        },
+        statusCode: execution.status === 'success' ? 200 : 500,
+        error: execution.errorMessage
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message, statusCode: 500 };
+    }
+  }
+
   syncAllActive(): void {
     const active = this.workflowRepo.getActiveWorkflows();
     for (const wf of active) {
@@ -132,3 +306,4 @@ export class WebhookManager {
     }
   }
 }
+

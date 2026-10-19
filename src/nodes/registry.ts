@@ -23,6 +23,7 @@ import { ReadWriteFileNode } from './core/file';
 import { ExtractFromFileNode } from './core/extract-file';
 import { DateTimeNode } from './core/date-time';
 import { AggregateNode } from './core/aggregate';
+import { StickyNoteNode } from './core/sticky-note';
 
 import { TelegramNode } from './apps/telegram';
 import { DiscordNode } from './apps/discord';
@@ -92,6 +93,7 @@ export class NodeRegistry {
     this.register(new ExtractFromFileNode());
     this.register(new DateTimeNode());
     this.register(new AggregateNode());
+    this.register(new StickyNoteNode());
 
     // Apps, Databases & Cloud Connectors
     this.register(new TelegramNode());

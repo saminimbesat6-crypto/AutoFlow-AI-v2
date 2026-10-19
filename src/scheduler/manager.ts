@@ -4,17 +4,55 @@ import { getDatabase } from '../database/connection';
 import { WorkflowRepository } from '../database/repositories/workflow-repository';
 import { WorkflowExecutor } from '../engine/executor';
 import { Workflow } from '../types/workflow';
+import { ExecutionRetentionManager } from '../engine/retention-manager';
 
 export class SchedulerManager {
   private db: DatabaseSync;
   private workflowRepo: WorkflowRepository;
   private executor: WorkflowExecutor;
+  private retentionManager: ExecutionRetentionManager;
   private activeJobs: Map<string, ScheduledTask[]> = new Map(); // workflowId -> jobs
+  private retentionTask: ScheduledTask | null = null;
 
   constructor(db?: DatabaseSync) {
     this.db = db || getDatabase();
     this.workflowRepo = new WorkflowRepository(this.db);
     this.executor = new WorkflowExecutor(this.db);
+    this.retentionManager = new ExecutionRetentionManager(this.db);
+    this.initRetentionCron();
+  }
+
+  initRetentionCron(): void {
+    if (process.env.NODE_ENV === 'test') return;
+
+    if (this.retentionTask) {
+      this.retentionTask.stop();
+      this.retentionTask = null;
+    }
+
+    // Run execution pruning every night at 02:00 AM
+    this.retentionTask = cron.schedule('0 2 * * *', () => {
+      try {
+        const settings = this.retentionManager.getSettings();
+        if (settings.enabled) {
+          const result = this.retentionManager.prune();
+          console.log(`[Retention] Automated prune completed: removed ${result.deletedCount} executions older than ${result.cutoffDate}`);
+        }
+      } catch (err) {
+        console.error('[Retention] Error during scheduled execution pruning:', err);
+      }
+    });
+  }
+
+  destroy(): void {
+    if (this.retentionTask) {
+      this.retentionTask.stop();
+      this.retentionTask = null;
+    }
+    for (const [id, jobs] of this.activeJobs.entries()) {
+      for (const job of jobs) job.stop();
+    }
+    this.activeJobs.clear();
   }
 
   registerWorkflowSchedules(workflow: Workflow): void {
@@ -102,5 +140,7 @@ export class SchedulerManager {
     for (const wf of active) {
       this.registerWorkflowSchedules(wf);
     }
+
+    this.initRetentionCron();
   }
 }

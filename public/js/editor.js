@@ -183,6 +183,7 @@ class WorkflowEditor {
       notes: ''
     };
 
+    this.canvas.pushSnapshot();
     this.canvas.workflow.nodes.push(newNode);
     this.canvas.render();
     this.canvas.selectNode(newNode.id);
@@ -291,6 +292,112 @@ class WorkflowEditor {
       });
     });
     container.appendChild(helperBox);
+
+    // Dual Webhook Card (n8n parity: Test URL vs Production URL)
+    if (node.type === 'webhook-trigger') {
+      const webhookCard = document.createElement('div');
+      webhookCard.className = 'webhook-urls-card';
+      webhookCard.style.cssText = 'background: rgba(34, 197, 94, 0.08); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px;';
+      
+      const currentPath = node.parameters?.path || 'my-webhook';
+      const origin = window.location.origin;
+      const testUrl = `${origin}/webhook-test/${currentPath}`;
+      const prodUrl = `${origin}/webhook/${currentPath}`;
+      const isActive = this.canvas.workflow?.active;
+
+      webhookCard.innerHTML = `
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <span style="font-weight: 600; color: #4ade80; font-size: 0.82rem;">📡 Webhook Endpoints</span>
+          <span class="badge" style="background: ${isActive ? '#15803d' : '#334155'}; color: #fff; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px;">
+            ${isActive ? 'ACTIVE' : 'TEST MODE'}
+          </span>
+        </div>
+        
+        <div style="margin-bottom: 8px;">
+          <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 3px;">🧪 Test URL (Listen without activating):</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" class="form-control" style="font-size: 0.76rem; font-family: monospace;" readonly value="${testUrl}" id="webhook-test-url-input" />
+            <button type="button" class="btn btn-secondary btn-sm copy-test-url-btn" title="Copy Test URL">📋</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 10px;">
+          <div style="font-size: 0.72rem; color: #94a3b8; margin-bottom: 3px;">🌐 Production URL (Runs when active):</div>
+          <div style="display: flex; gap: 6px;">
+            <input type="text" class="form-control" style="font-size: 0.76rem; font-family: monospace;" readonly value="${prodUrl}" id="webhook-prod-url-input" />
+            <button type="button" class="btn btn-secondary btn-sm copy-prod-url-btn" title="Copy Production URL">📋</button>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-primary btn-sm listen-test-webhook-btn" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;">
+          <span>🎯 Listen for Test Event</span>
+        </button>
+        <div class="test-webhook-status" style="display: none; margin-top: 8px; font-size: 0.75rem; text-align: center; color: #fde047;"></div>
+      `;
+
+      // Copy buttons
+      webhookCard.querySelector('.copy-test-url-btn').addEventListener('click', () => {
+        navigator.clipboard?.writeText(testUrl);
+        const btn = webhookCard.querySelector('.copy-test-url-btn');
+        btn.textContent = '✓';
+        setTimeout(() => btn.textContent = '📋', 1200);
+      });
+      webhookCard.querySelector('.copy-prod-url-btn').addEventListener('click', () => {
+        navigator.clipboard?.writeText(prodUrl);
+        const btn = webhookCard.querySelector('.copy-prod-url-btn');
+        btn.textContent = '✓';
+        setTimeout(() => btn.textContent = '📋', 1200);
+      });
+
+      // Listen button
+      const listenBtn = webhookCard.querySelector('.listen-test-webhook-btn');
+      const statusDiv = webhookCard.querySelector('.test-webhook-status');
+      listenBtn.addEventListener('click', async () => {
+        listenBtn.disabled = true;
+        listenBtn.innerHTML = '<span class="spinner"></span> <span>Listening on /webhook-test/' + currentPath + '...</span>';
+        statusDiv.style.display = 'block';
+        statusDiv.style.color = '#fde047';
+        statusDiv.textContent = 'Send an HTTP request to the Test URL above within 120 seconds.';
+
+        try {
+          const res = await fetch(`/api/workflows/${this.canvas.workflow.id}/webhook-test/listen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              nodeId: node.id,
+              path: currentPath,
+              method: node.parameters?.httpMethod || 'POST',
+              timeoutMs: 120000
+            })
+          });
+          const data = await res.json();
+          if (data.success && data.event) {
+            statusDiv.style.color = '#4ade80';
+            statusDiv.textContent = '✅ Event received successfully from ' + data.event.method + '!';
+            listenBtn.innerHTML = '<span>🎯 Listen Again</span>';
+            listenBtn.disabled = false;
+            node.pinnedData = data.outputData ? data.outputData[0] : [{ json: data.event }];
+            this.canvas.render();
+            if (this.stepOutputContainer && this.stepOutputJson) {
+              this.stepOutputContainer.style.display = 'block';
+              this.stepOutputJson.textContent = JSON.stringify(node.pinnedData, null, 2);
+            }
+          } else {
+            statusDiv.style.color = '#ef4444';
+            statusDiv.textContent = '⚠️ ' + (data.error || 'Timed out or cancelled');
+            listenBtn.innerHTML = '<span>🎯 Listen for Test Event</span>';
+            listenBtn.disabled = false;
+          }
+        } catch (err) {
+          statusDiv.style.color = '#ef4444';
+          statusDiv.textContent = '⚠️ Failed to connect: ' + err.message;
+          listenBtn.innerHTML = '<span>🎯 Listen for Test Event</span>';
+          listenBtn.disabled = false;
+        }
+      });
+
+      container.appendChild(webhookCard);
+    }
 
     // Render properties defined in node schema
     if (nodeDef && nodeDef.properties) {

@@ -2,9 +2,11 @@ import { Router, Request, Response } from 'express';
 import { DatabaseSync } from 'node:sqlite';
 import { WorkflowExecutor } from '../../engine/executor';
 import { Workflow } from '../../types/workflow';
+import { ExecutionRetentionManager } from '../../engine/retention-manager';
 
 export function createExecutionRouter(db: DatabaseSync, executor: WorkflowExecutor): Router {
   const router = Router();
+  const retentionManager = new ExecutionRetentionManager(db);
 
   // List executions with optional filtering by workflowId or status
   router.get('/', (req: Request, res: Response) => {
@@ -50,6 +52,40 @@ export function createExecutionRouter(db: DatabaseSync, executor: WorkflowExecut
       }));
 
       res.json({ success: true, data: executions });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Prune execution logs (n8n parity)
+  router.post('/prune', (req: Request, res: Response) => {
+    try {
+      const { maxAgeDays, pruneSuccessfulOnly, batchSize } = req.body || {};
+      const result = retentionManager.prune({ maxAgeDays, pruneSuccessfulOnly, batchSize });
+      res.json({
+        success: true,
+        message: `Successfully pruned ${result.deletedCount} executions older than ${result.cutoffDate}`,
+        data: result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Get retention policy settings
+  router.get('/retention-settings', (req: Request, res: Response) => {
+    try {
+      res.json({ success: true, data: retentionManager.getSettings() });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Update retention policy settings
+  router.post('/retention-settings', (req: Request, res: Response) => {
+    try {
+      const updated = retentionManager.updateSettings(req.body || {});
+      res.json({ success: true, data: updated });
     } catch (err: any) {
       res.status(500).json({ success: false, error: err.message });
     }

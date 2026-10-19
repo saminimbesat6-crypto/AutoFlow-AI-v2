@@ -62,10 +62,40 @@ export interface Workflow {
   id: string;
   name: string;
   description?: string;
+  folderId?: string;
+  tags?: string[];
   nodes: WorkflowNode[];
   connections: Connection[];
   settings: WorkflowSettings;
   active: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowVersion {
+  id: string;
+  workflowId: string;
+  versionNum: number;
+  name: string;
+  description?: string;
+  nodes: WorkflowNode[];
+  connections: Connection[];
+  settings: WorkflowSettings;
+  createdAt: string;
+}
+
+export interface WorkflowTag {
+  id: string;
+  name: string;
+  color: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkflowFolder {
+  id: string;
+  name: string;
+  parentId?: string;
   createdAt: string;
   updatedAt: string;
 }

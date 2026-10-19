@@ -14,11 +14,25 @@ class WorkflowCanvas {
     this.workflow = null;
     this.nodeTypes = new Map();
     this.selectedNodeId = null;
+    this.selectedNodeIds = new Set();
     this.selectedConnectionIndex = null;
 
+    // Undo / Redo History
+    this.undoStack = [];
+    this.redoStack = [];
+    this.maxHistory = 50;
+
+    // Dragging state
     this.draggingNode = null;
-    this.dragOffsetX = 0;
-    this.dragOffsetY = 0;
+    this.dragStartPositions = new Map();
+    this.dragStartMouse = { x: 0, y: 0 };
+    this.hasActuallyDragged = false;
+    this.dragSnapshotTaken = false;
+
+    // Marquee Multi-Select State
+    this.isMarqueeSelecting = false;
+    this.marqueeStartScreen = { x: 0, y: 0 };
+    this.marqueeBoxEl = null;
 
     // Connecting state
     this.isConnecting = false;
@@ -52,36 +66,158 @@ class WorkflowCanvas {
   loadWorkflow(workflow) {
     this.workflow = workflow;
     this.selectedNodeId = null;
+    this.selectedNodeIds.clear();
     this.selectedConnectionIndex = null;
+    this.undoStack = [];
+    this.redoStack = [];
+    this.updateUndoRedoUI();
     this.render();
   }
 
+  pushSnapshot() {
+    if (!this.workflow || !this.workflow.nodes) return;
+    const snapshot = {
+      nodes: JSON.parse(JSON.stringify(this.workflow.nodes)),
+      connections: JSON.parse(JSON.stringify(this.workflow.connections || []))
+    };
+    this.undoStack.push(snapshot);
+    if (this.undoStack.length > this.maxHistory) {
+      this.undoStack.shift();
+    }
+    this.redoStack = [];
+    this.updateUndoRedoUI();
+  }
+
+  undo() {
+    if (this.undoStack.length === 0) return;
+    const current = {
+      nodes: JSON.parse(JSON.stringify(this.workflow.nodes)),
+      connections: JSON.parse(JSON.stringify(this.workflow.connections || []))
+    };
+    this.redoStack.push(current);
+    const prev = this.undoStack.pop();
+    this.workflow.nodes = prev.nodes;
+    this.workflow.connections = prev.connections;
+    this.selectedNodeIds.clear();
+    this.selectedNodeId = null;
+    this.render();
+    this.updateUndoRedoUI();
+    if (this.onNodeChange) this.onNodeChange();
+    if (this.onNodeSelect) this.onNodeSelect(null);
+  }
+
+  redo() {
+    if (this.redoStack.length === 0) return;
+    const current = {
+      nodes: JSON.parse(JSON.stringify(this.workflow.nodes)),
+      connections: JSON.parse(JSON.stringify(this.workflow.connections || []))
+    };
+    this.undoStack.push(current);
+    const next = this.redoStack.pop();
+    this.workflow.nodes = next.nodes;
+    this.workflow.connections = next.connections;
+    this.selectedNodeIds.clear();
+    this.selectedNodeId = null;
+    this.render();
+    this.updateUndoRedoUI();
+    if (this.onNodeChange) this.onNodeChange();
+    if (this.onNodeSelect) this.onNodeSelect(null);
+  }
+
+  updateUndoRedoUI() {
+    const undoBtn = document.getElementById('canvas-undo-btn');
+    const redoBtn = document.getElementById('canvas-redo-btn');
+    if (undoBtn) undoBtn.disabled = this.undoStack.length === 0;
+    if (redoBtn) redoBtn.disabled = this.redoStack.length === 0;
+  }
+
   initEvents() {
-    // Canvas Panning via Middle click or Space+Drag or background Drag
+    // Canvas Panning via Middle click or Space+Drag or background Drag, or Shift+Drag for Marquee
     this.container.addEventListener('mousedown', (e) => {
       if (e.target === this.container || e.target === this.svg || e.target.classList.contains('canvas-plane')) {
-        this.isPanning = true;
-        this.startX = e.clientX - this.panX;
-        this.startY = e.clientY - this.panY;
-        this.container.classList.add('panning');
-        this.deselectAll();
+        if (e.shiftKey) {
+          // Marquee multi-select
+          this.isMarqueeSelecting = true;
+          this.marqueeStartScreen = { x: e.clientX, y: e.clientY };
+          if (!e.ctrlKey && !e.metaKey) {
+            this.selectedNodeIds.clear();
+            this.updateSelectionUI();
+          }
+          this.marqueeBoxEl = document.createElement('div');
+          this.marqueeBoxEl.className = 'canvas-marquee-box';
+          this.container.appendChild(this.marqueeBoxEl);
+        } else {
+          this.isPanning = true;
+          this.startX = e.clientX - this.panX;
+          this.startY = e.clientY - this.panY;
+          this.container.classList.add('panning');
+          this.deselectAll();
+        }
       }
     });
 
     window.addEventListener('mousemove', (e) => {
-      if (this.isPanning) {
+      if (this.isMarqueeSelecting && this.marqueeBoxEl) {
+        const containerRect = this.container.getBoundingClientRect();
+        const screenX1 = Math.min(e.clientX, this.marqueeStartScreen.x);
+        const screenY1 = Math.min(e.clientY, this.marqueeStartScreen.y);
+        const screenX2 = Math.max(e.clientX, this.marqueeStartScreen.x);
+        const screenY2 = Math.max(e.clientY, this.marqueeStartScreen.y);
+
+        this.marqueeBoxEl.style.left = `${screenX1 - containerRect.left}px`;
+        this.marqueeBoxEl.style.top = `${screenY1 - containerRect.top}px`;
+        this.marqueeBoxEl.style.width = `${screenX2 - screenX1}px`;
+        this.marqueeBoxEl.style.height = `${screenY2 - screenY1}px`;
+
+        const p1 = this.screenToCanvas(screenX1, screenY1);
+        const p2 = this.screenToCanvas(screenX2, screenY2);
+        const minX = p1.x;
+        const minY = p1.y;
+        const maxX = p2.x;
+        const maxY = p2.y;
+
+        if (this.workflow && this.workflow.nodes) {
+          for (const node of this.workflow.nodes) {
+            const w = node.type === 'sticky-note' ? (node.parameters?.width || 300) : 220;
+            const h = node.type === 'sticky-note' ? (node.parameters?.height || 180) : 80;
+            const nx = node.position.x;
+            const ny = node.position.y;
+            const overlaps = !(nx > maxX || nx + w < minX || ny > maxY || ny + h < minY);
+
+            if (overlaps) {
+              this.selectedNodeIds.add(node.id);
+            } else if (!e.ctrlKey && !e.metaKey) {
+              this.selectedNodeIds.delete(node.id);
+            }
+          }
+          this.updateSelectionUI();
+        }
+      } else if (this.isPanning) {
         this.panX = e.clientX - this.startX;
         this.panY = e.clientY - this.startY;
         this.updateTransform();
       } else if (this.draggingNode) {
         const mouseCanvas = this.screenToCanvas(e.clientX, e.clientY);
-        const node = this.workflow.nodes.find((n) => n.id === this.draggingNode.id);
-        if (node) {
-          node.position.x = Math.round(mouseCanvas.x - this.dragOffsetX);
-          node.position.y = Math.round(mouseCanvas.y - this.dragOffsetY);
-          this.updateNodePosition(node);
-          this.renderConnections();
+        const dx = Math.round(mouseCanvas.x - this.dragStartMouse.x);
+        const dy = Math.round(mouseCanvas.y - this.dragStartMouse.y);
+
+        if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+          if (!this.dragSnapshotTaken) {
+            this.pushSnapshot();
+            this.dragSnapshotTaken = true;
+          }
+          this.hasActuallyDragged = true;
         }
+
+        for (const [id, startPos] of this.dragStartPositions.entries()) {
+          const node = this.workflow.nodes.find((n) => n.id === id);
+          if (node && node.position) {
+            node.position.x = startPos.x + dx;
+            node.position.y = startPos.y + dy;
+            this.updateNodePosition(node);
+          }
+        }
+        this.renderConnections();
       } else if (this.isConnecting && this.tempConnectionPath) {
         const mouseCanvas = this.screenToCanvas(e.clientX, e.clientY);
         const sourcePos = this.getSourcePortPosition(this.connectSourceNode, this.connectSourceOutput);
@@ -90,13 +226,29 @@ class WorkflowCanvas {
     });
 
     window.addEventListener('mouseup', () => {
+      if (this.isMarqueeSelecting) {
+        this.isMarqueeSelecting = false;
+        if (this.marqueeBoxEl) {
+          this.marqueeBoxEl.remove();
+          this.marqueeBoxEl = null;
+        }
+        this.selectedNodeId = this.selectedNodeIds.size > 0 ? Array.from(this.selectedNodeIds)[0] : null;
+        if (this.onNodeSelect) {
+          this.onNodeSelect(this.selectedNodeId ? this.workflow.nodes.find(n => n.id === this.selectedNodeId) : null);
+        }
+      }
       if (this.isPanning) {
         this.isPanning = false;
         this.container.classList.remove('panning');
       }
       if (this.draggingNode) {
+        if (this.hasActuallyDragged && this.onNodeChange) {
+          this.onNodeChange();
+        }
         this.draggingNode = null;
-        if (this.onNodeChange) this.onNodeChange();
+        this.dragStartPositions.clear();
+        this.hasActuallyDragged = false;
+        this.dragSnapshotTaken = false;
       }
       if (this.isConnecting) {
         this.cancelConnecting();
@@ -154,13 +306,26 @@ class WorkflowCanvas {
           this.updateTransform();
         } else if (this.draggingNode) {
           const mouseCanvas = this.screenToCanvas(touch.clientX, touch.clientY);
-          const node = this.workflow.nodes.find((n) => n.id === this.draggingNode.id);
-          if (node) {
-            node.position.x = Math.round(mouseCanvas.x - this.dragOffsetX);
-            node.position.y = Math.round(mouseCanvas.y - this.dragOffsetY);
-            this.updateNodePosition(node);
-            this.renderConnections();
+          const dx = Math.round(mouseCanvas.x - this.dragStartMouse.x);
+          const dy = Math.round(mouseCanvas.y - this.dragStartMouse.y);
+
+          if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
+            if (!this.dragSnapshotTaken) {
+              this.pushSnapshot();
+              this.dragSnapshotTaken = true;
+            }
+            this.hasActuallyDragged = true;
           }
+
+          for (const [id, startPos] of this.dragStartPositions.entries()) {
+            const node = this.workflow.nodes.find((n) => n.id === id);
+            if (node && node.position) {
+              node.position.x = startPos.x + dx;
+              node.position.y = startPos.y + dy;
+              this.updateNodePosition(node);
+            }
+          }
+          this.renderConnections();
         } else if (this.isConnecting && this.tempConnectionPath) {
           const mouseCanvas = this.screenToCanvas(touch.clientX, touch.clientY);
           const sourcePos = this.getSourcePortPosition(this.connectSourceNode, this.connectSourceOutput);
@@ -179,8 +344,13 @@ class WorkflowCanvas {
           this.container.classList.remove('panning');
         }
         if (this.draggingNode) {
+          if (this.hasActuallyDragged && this.onNodeChange) {
+            this.onNodeChange();
+          }
           this.draggingNode = null;
-          if (this.onNodeChange) this.onNodeChange();
+          this.dragStartPositions.clear();
+          this.hasActuallyDragged = false;
+          this.dragSnapshotTaken = false;
         }
         if (this.isConnecting) {
           this.cancelConnecting();
@@ -205,14 +375,40 @@ class WorkflowCanvas {
       this.updateTransform();
     }, { passive: false });
 
-    // Keyboard delete
+    // Keyboard shortcuts: Undo (Ctrl+Z), Redo (Ctrl+Y / Ctrl+Shift+Z), Duplicate (Ctrl+D), Delete
     window.addEventListener('keydown', (e) => {
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
 
+      const isCtrlOrCmd = e.ctrlKey || e.metaKey;
+
+      // Undo: Ctrl+Z or Cmd+Z (without Shift)
+      if (isCtrlOrCmd && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+        e.preventDefault();
+        this.undo();
+        return;
+      }
+
+      // Redo: Ctrl+Y or Cmd+Shift+Z or Ctrl+Shift+Z
+      if ((isCtrlOrCmd && (e.key === 'y' || e.key === 'Y')) || (isCtrlOrCmd && e.shiftKey && (e.key === 'z' || e.key === 'Z'))) {
+        e.preventDefault();
+        this.redo();
+        return;
+      }
+
+      // Duplicate: Ctrl+D or Cmd+D
+      if (isCtrlOrCmd && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        this.duplicateSelected();
+        return;
+      }
+
+      // Delete / Backspace: delete selected nodes or connection
       if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (this.selectedNodeId) {
-          this.deleteNode(this.selectedNodeId);
+        if (this.selectedNodeIds && this.selectedNodeIds.size > 0) {
+          e.preventDefault();
+          this.deleteSelectedNodes();
         } else if (this.selectedConnectionIndex !== null) {
+          e.preventDefault();
           this.deleteConnection(this.selectedConnectionIndex);
         }
       }
@@ -295,6 +491,11 @@ class WorkflowCanvas {
   }
 
   renderNode(node) {
+    if (node.type === 'sticky-note') {
+      this.renderStickyNote(node);
+      return;
+    }
+
     const nodeDef = this.nodeTypes.get(node.type) || {
       name: node.name,
       category: 'core',
@@ -398,29 +599,131 @@ class WorkflowCanvas {
     nodeEl.addEventListener('mousedown', (e) => {
       if (e.target.classList.contains('node-port')) return;
       e.stopPropagation();
-
-      this.selectNode(node.id);
-
-      this.draggingNode = node;
-      const mouseCanvas = this.screenToCanvas(e.clientX, e.clientY);
-      this.dragOffsetX = mouseCanvas.x - node.position.x;
-      this.dragOffsetY = mouseCanvas.y - node.position.y;
+      this.handleNodeMouseDown(node, e);
     });
 
     nodeEl.addEventListener('touchstart', (e) => {
       if (e.target.classList.contains('node-port')) return;
       if (e.touches && e.touches.length === 1) {
-        const touch = e.touches[0];
-        this.selectNode(node.id);
-
-        this.draggingNode = node;
-        const mouseCanvas = this.screenToCanvas(touch.clientX, touch.clientY);
-        this.dragOffsetX = mouseCanvas.x - node.position.x;
-        this.dragOffsetY = mouseCanvas.y - node.position.y;
+        this.handleNodeTouchStart(node, e);
       }
     }, { passive: true });
 
     this.plane.appendChild(nodeEl);
+  }
+
+  escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  renderStickyNote(node) {
+    const noteEl = document.createElement('div');
+    const color = (node.parameters && node.parameters.color) || 'yellow';
+    const width = (node.parameters && node.parameters.width) || 300;
+    const height = (node.parameters && node.parameters.height) || 180;
+    const content = (node.parameters && node.parameters.content) || '## Workflow Section\nDouble click to edit instructions or notes...';
+
+    noteEl.className = `canvas-sticky-note sticky-${color}`;
+    noteEl.id = `node-${node.id}`;
+    if (this.selectedNodeId === node.id) noteEl.classList.add('selected');
+
+    noteEl.style.left = `${node.position.x}px`;
+    noteEl.style.top = `${node.position.y}px`;
+    noteEl.style.width = `${width}px`;
+    noteEl.style.height = `${height}px`;
+
+    const colors = ['yellow', 'blue', 'green', 'red', 'purple', 'orange', 'gray'];
+    const colorDots = colors.map((c) =>
+      `<div class="sticky-color-dot sticky-${c}" data-color="${c}" title="${c}"></div>`
+    ).join('');
+
+    noteEl.innerHTML = `
+      <div class="sticky-note-header">
+        <div class="sticky-title">📝 ${this.escapeHtml(node.name || 'Sticky Note')}</div>
+        <div class="sticky-controls">
+          <div class="sticky-colors-bar">${colorDots}</div>
+          <button class="sticky-delete-btn" title="Delete Note">✕</button>
+        </div>
+      </div>
+      <div class="sticky-note-body">
+        <textarea class="sticky-note-textarea" placeholder="Add note content...">${this.escapeHtml(content)}</textarea>
+      </div>
+    `;
+
+    // Handle color change
+    noteEl.querySelectorAll('.sticky-color-dot').forEach((dot) => {
+      dot.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const newColor = dot.dataset.color;
+        colors.forEach((c) => noteEl.classList.remove(`sticky-${c}`));
+        noteEl.classList.add(`sticky-${newColor}`);
+        if (!node.parameters) node.parameters = {};
+        node.parameters.color = newColor;
+        if (this.onNodeChange) this.onNodeChange();
+      });
+    });
+
+    // Handle delete
+    const deleteBtn = noteEl.querySelector('.sticky-delete-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.deleteNode(node.id);
+      });
+    }
+
+    // Textarea input
+    const textarea = noteEl.querySelector('.sticky-note-textarea');
+    if (textarea) {
+      textarea.addEventListener('input', (e) => {
+        if (!node.parameters) node.parameters = {};
+        node.parameters.content = e.target.value;
+        if (this.onNodeChange) this.onNodeChange();
+      });
+      textarea.addEventListener('mousedown', (e) => e.stopPropagation());
+      textarea.addEventListener('touchstart', (e) => e.stopPropagation());
+    }
+
+    // Resize observer to persist width & height
+    if (window.ResizeObserver) {
+      const ro = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (!node.parameters) node.parameters = {};
+          node.parameters.width = Math.round(entry.contentRect.width);
+          node.parameters.height = Math.round(entry.contentRect.height);
+        }
+      });
+      ro.observe(noteEl);
+    }
+
+    // Dragging from header
+    const header = noteEl.querySelector('.sticky-note-header');
+    header.addEventListener('mousedown', (e) => {
+      if (e.target.classList.contains('sticky-color-dot') || e.target.classList.contains('sticky-delete-btn')) return;
+      e.stopPropagation();
+      this.handleNodeMouseDown(node, e);
+    });
+
+    header.addEventListener('touchstart', (e) => {
+      if (e.touches && e.touches.length === 1) {
+        e.stopPropagation();
+        this.handleNodeTouchStart(node, e);
+      }
+    }, { passive: true });
+
+    noteEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const isMulti = e.shiftKey || e.ctrlKey || e.metaKey;
+      this.selectNode(node.id, isMulti);
+    });
+
+    this.plane.appendChild(noteEl);
   }
 
   updateNodePosition(node) {
@@ -527,6 +830,7 @@ class WorkflowCanvas {
     );
 
     if (!exists) {
+      this.pushSnapshot();
       this.workflow.connections.push({
         source: sourceNode.name,
         sourceOutput,
@@ -539,26 +843,91 @@ class WorkflowCanvas {
     }
   }
 
-  selectNode(nodeId) {
-    this.selectedNodeId = nodeId;
+  handleNodeMouseDown(node, e) {
+    const isMultiSelect = e.shiftKey || e.ctrlKey || e.metaKey;
+    if (isMultiSelect) {
+      this.selectNode(node.id, true);
+    } else {
+      if (!this.selectedNodeIds.has(node.id)) {
+        this.selectNode(node.id, false);
+      } else {
+        this.selectedNodeId = node.id;
+        if (this.onNodeSelect) this.onNodeSelect(node);
+      }
+    }
+
+    this.draggingNode = node;
+    this.dragStartPositions.clear();
+    this.dragStartMouse = this.screenToCanvas(e.clientX, e.clientY);
+    for (const id of this.selectedNodeIds) {
+      const n = this.workflow.nodes.find((item) => item.id === id);
+      if (n && n.position) {
+        this.dragStartPositions.set(id, { x: n.position.x, y: n.position.y });
+      }
+    }
+    this.hasActuallyDragged = false;
+    this.dragSnapshotTaken = false;
+  }
+
+  handleNodeTouchStart(node, e) {
+    if (!e.touches || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    if (!this.selectedNodeIds.has(node.id)) {
+      this.selectNode(node.id, false);
+    } else {
+      this.selectedNodeId = node.id;
+      if (this.onNodeSelect) this.onNodeSelect(node);
+    }
+
+    this.draggingNode = node;
+    this.dragStartPositions.clear();
+    this.dragStartMouse = this.screenToCanvas(touch.clientX, touch.clientY);
+    for (const id of this.selectedNodeIds) {
+      const n = this.workflow.nodes.find((item) => item.id === id);
+      if (n && n.position) {
+        this.dragStartPositions.set(id, { x: n.position.x, y: n.position.y });
+      }
+    }
+    this.hasActuallyDragged = false;
+    this.dragSnapshotTaken = false;
+  }
+
+  updateSelectionUI() {
+    document.querySelectorAll('.canvas-node, .canvas-sticky-note').forEach((el) => {
+      const id = el.id.replace('node-', '');
+      el.classList.toggle('selected', this.selectedNodeIds.has(id));
+    });
+  }
+
+  selectNode(nodeId, multiSelect = false) {
+    if (multiSelect) {
+      if (this.selectedNodeIds.has(nodeId)) {
+        this.selectedNodeIds.delete(nodeId);
+      } else {
+        this.selectedNodeIds.add(nodeId);
+      }
+    } else {
+      this.selectedNodeIds.clear();
+      if (nodeId) this.selectedNodeIds.add(nodeId);
+    }
+
+    this.selectedNodeId = this.selectedNodeIds.size > 0 ? (nodeId || Array.from(this.selectedNodeIds)[0]) : null;
     this.selectedConnectionIndex = null;
 
-    document.querySelectorAll('.canvas-node').forEach((el) => {
-      el.classList.toggle('selected', el.id === `node-${nodeId}`);
-    });
-
+    this.updateSelectionUI();
     this.renderConnections();
 
     if (this.onNodeSelect) {
-      const node = this.workflow.nodes.find((n) => n.id === nodeId);
-      this.onNodeSelect(node);
+      const node = this.selectedNodeId ? this.workflow.nodes.find((n) => n.id === this.selectedNodeId) : null;
+      this.onNodeSelect(node || null);
     }
   }
 
   selectConnection(index) {
     this.selectedConnectionIndex = index;
     this.selectedNodeId = null;
-    document.querySelectorAll('.canvas-node').forEach((el) => el.classList.remove('selected'));
+    this.selectedNodeIds.clear();
+    this.updateSelectionUI();
     this.renderConnections();
 
     if (this.onNodeSelect) this.onNodeSelect(null);
@@ -566,33 +935,106 @@ class WorkflowCanvas {
 
   deselectAll() {
     this.selectedNodeId = null;
+    this.selectedNodeIds.clear();
     this.selectedConnectionIndex = null;
-    document.querySelectorAll('.canvas-node').forEach((el) => el.classList.remove('selected'));
+    this.updateSelectionUI();
     this.renderConnections();
     if (this.onNodeSelect) this.onNodeSelect(null);
   }
 
   deleteNode(nodeId) {
+    this.pushSnapshot();
     const nodeIndex = this.workflow.nodes.findIndex((n) => n.id === nodeId);
     if (nodeIndex === -1) return;
 
     const node = this.workflow.nodes[nodeIndex];
-    // Remove node
     this.workflow.nodes.splice(nodeIndex, 1);
 
-    // Remove any connections attached to this node
     this.workflow.connections = this.workflow.connections.filter(
       (c) => c.source !== node.name && c.source !== node.id && c.target !== node.name && c.target !== node.id
     );
 
+    this.selectedNodeIds.delete(nodeId);
+    this.selectedNodeId = this.selectedNodeIds.size > 0 ? Array.from(this.selectedNodeIds)[0] : null;
+    this.render();
+    if (this.onNodeChange) this.onNodeChange();
+    if (this.onNodeSelect) this.onNodeSelect(this.selectedNodeId ? this.workflow.nodes.find(n => n.id === this.selectedNodeId) : null);
+  }
+
+  deleteSelectedNodes() {
+    if (!this.selectedNodeIds || this.selectedNodeIds.size === 0) return;
+    this.pushSnapshot();
+
+    const toDelete = new Set(this.selectedNodeIds);
+    const deletedNames = new Set(
+      this.workflow.nodes.filter((n) => toDelete.has(n.id)).map((n) => n.name)
+    );
+
+    this.workflow.nodes = this.workflow.nodes.filter((n) => !toDelete.has(n.id));
+    this.workflow.connections = this.workflow.connections.filter(
+      (c) => !toDelete.has(c.source) && !deletedNames.has(c.source) && !toDelete.has(c.target) && !deletedNames.has(c.target)
+    );
+
+    this.selectedNodeIds.clear();
     this.selectedNodeId = null;
     this.render();
     if (this.onNodeChange) this.onNodeChange();
     if (this.onNodeSelect) this.onNodeSelect(null);
   }
 
+  duplicateSelected() {
+    if (!this.selectedNodeIds || this.selectedNodeIds.size === 0) return;
+    this.pushSnapshot();
+
+    const idMap = new Map();
+    const nameMap = new Map();
+    const newNodes = [];
+
+    for (const id of this.selectedNodeIds) {
+      const original = this.workflow.nodes.find((n) => n.id === id);
+      if (!original) continue;
+      const cloned = JSON.parse(JSON.stringify(original));
+      const newId = 'node_' + Math.random().toString(36).substring(2, 10);
+      const newName = `${original.name} (Copy)`;
+      idMap.set(original.id, newId);
+      nameMap.set(original.name, newName);
+      cloned.id = newId;
+      cloned.name = newName;
+      cloned.position.x += 40;
+      cloned.position.y += 40;
+      newNodes.push(cloned);
+    }
+
+    // Duplicate internal connections among selected nodes
+    const newConnections = [];
+    for (const conn of this.workflow.connections) {
+      const sMatch = idMap.has(conn.source) || nameMap.has(conn.source);
+      const tMatch = idMap.has(conn.target) || nameMap.has(conn.target);
+      if (sMatch && tMatch) {
+        newConnections.push({
+          source: nameMap.get(conn.source) || idMap.get(conn.source) || conn.source,
+          sourceOutput: conn.sourceOutput || 0,
+          target: nameMap.get(conn.target) || idMap.get(conn.target) || conn.target,
+          targetInput: conn.targetInput || 0
+        });
+      }
+    }
+
+    this.workflow.nodes.push(...newNodes);
+    this.workflow.connections.push(...newConnections);
+
+    this.selectedNodeIds.clear();
+    for (const n of newNodes) {
+      this.selectedNodeIds.add(n.id);
+    }
+    this.selectedNodeId = newNodes.length > 0 ? newNodes[0].id : null;
+    this.render();
+    if (this.onNodeChange) this.onNodeChange();
+  }
+
   deleteConnection(index) {
     if (index >= 0 && index < this.workflow.connections.length) {
+      this.pushSnapshot();
       this.workflow.connections.splice(index, 1);
       this.selectedConnectionIndex = null;
       this.renderConnections();

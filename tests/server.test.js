@@ -10,13 +10,15 @@ describe('AutoFlow AI HTTP API Integration Tests', () => {
   let server;
   let baseUrl;
   let testDbFile;
+  let serverInstance;
 
   before(async () => {
     testDbFile = path.join(__dirname, 'test-server.sqlite');
     if (fs.existsSync(testDbFile)) fs.unlinkSync(testDbFile);
     process.env.DATABASE_PATH = testDbFile;
 
-    const { app } = createApp();
+    serverInstance = createApp();
+    const app = serverInstance.app;
     await new Promise((resolve) => {
       server = app.listen(0, () => {
         const port = server.address().port;
@@ -28,6 +30,7 @@ describe('AutoFlow AI HTTP API Integration Tests', () => {
 
   after(async () => {
     if (server) await new Promise((r) => server.close(r));
+    if (serverInstance?.schedulerManager) serverInstance.schedulerManager.destroy();
     closeDatabase();
     if (fs.existsSync(testDbFile)) fs.unlinkSync(testDbFile);
   });

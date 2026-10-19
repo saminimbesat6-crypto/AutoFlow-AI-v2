@@ -59,16 +59,16 @@ describe('AutoFlow AI Full Node Catalog (404 Nodes) Audit & Verification Test Su
     if (mockServer) mockServer.close();
   });
 
-  test('1. Inventory & Uniqueness: Exactly 404 distinct, non-duplicated nodes are registered', () => {
+  test('1. Inventory & Uniqueness: Exactly 405 distinct, non-duplicated nodes are registered', () => {
     const list = registry.list();
-    assert.strictEqual(list.length, 404, `Expected exactly 404 registered nodes, found ${list.length}`);
+    assert.strictEqual(list.length, 405, `Expected exactly 405 registered nodes, found ${list.length}`);
 
     const typeSet = new Set();
     for (const node of list) {
       assert.ok(!typeSet.has(node.type), `Duplicate node type found: "${node.type}"`);
       typeSet.add(node.type);
     }
-    assert.strictEqual(typeSet.size, 404, 'All 404 node types must be unique');
+    assert.strictEqual(typeSet.size, 405, 'All 405 node types must be unique');
   });
 
   test('2. Schema & Metadata Validation: Every node satisfies full INodeDefinition specification', () => {
@@ -85,7 +85,7 @@ describe('AutoFlow AI Full Node Catalog (404 Nodes) Audit & Verification Test Su
 
       // Input / Output ports validation
       assert.ok(Array.isArray(node.inputs), `Inputs must be array in node ${node.type}`);
-      assert.ok(Array.isArray(node.outputs) && node.outputs.length > 0, `Outputs must be non-empty array in node ${node.type}`);
+      assert.ok(Array.isArray(node.outputs) && (node.type === 'sticky-note' || node.outputs.length > 0), `Outputs must be non-empty array in node ${node.type}`);
 
       // Properties validation
       assert.ok(Array.isArray(node.properties), `Properties must be array in node ${node.type}`);
@@ -217,6 +217,21 @@ describe('AutoFlow AI Full Node Catalog (404 Nodes) Audit & Verification Test Su
     const outPoll = await pollNode.execute(ctxPoll);
     assert.strictEqual(outPoll[0].length, 1);
     assert.strictEqual(outPoll[0][0].json.id, 'item-1');
+
+    // Test StickyNoteNode
+    const stickyNode = registry.get('sticky-note');
+    assert.ok(stickyNode, 'sticky-note must exist');
+    const nodeConfigSticky = {
+      id: 'sticky-1',
+      name: 'Sticky Note',
+      type: 'sticky-note',
+      position: { x: 0, y: 0 },
+      parameters: { content: '## Workflow Notes', color: 'blue' }
+    };
+    const ctxSticky = execCtx.createNodeContext(nodeConfigSticky, [{ json: {} }]);
+    const outSticky = await stickyNode.execute(ctxSticky);
+    assert.strictEqual(outSticky.length, 1);
+    assert.strictEqual(outSticky[0].length, 0, 'Sticky note must emit empty output and bypass stream');
   });
 
   test('5. Declarative Nodes Universal Execution: All 364 declarative nodes execute against local mock server', async () => {

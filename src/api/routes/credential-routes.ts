@@ -119,6 +119,33 @@ export function createCredentialRouter(
     }
   });
 
+  // Test connection for a credential (n8n parity)
+  router.post('/test', async (req: Request, res: Response) => {
+    try {
+      const { id, type, data } = req.body;
+      let credType = type;
+      let credData = data;
+
+      if (id) {
+        const existing = credentialsManager.get(id, true);
+        if (!existing) {
+          return res.status(404).json({ success: false, error: 'Credential not found' });
+        }
+        credType = existing.type;
+        credData = credData || existing.data;
+      }
+
+      if (!credType) {
+        return res.status(400).json({ success: false, error: 'Credential type is required' });
+      }
+
+      const result = await credentialsManager.testCredential(credType, credData || {});
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Create credential
   router.post('/', (req: Request, res: Response) => {
     try {

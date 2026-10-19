@@ -43,8 +43,19 @@ This document benchmarks AutoFlow AI's capabilities against n8n's public functio
 | **AI Systems** | Multi-Modal Vision & Document OCR | `GeminiNode` (JPEG, PNG, PDF OCR) | **Implemented** | Multi-modal tests verified |
 | **AI Systems** | Autonomous Agent with Tool Loop | `AiAgentNode` | **Implemented** | Calculator & workflow info tools |
 | **AI Systems** | AI Self-Healing & 1-Click Auto-Fix| Copilot error root-cause diagnosis | **Implemented** | `/api/ai/assistant/auto-fix` |
+| **Canvas & UX** | Canvas Sticky Notes & Annotations | `StickyNoteNode` (`src/nodes/core/sticky-note.ts`), 7 color themes, bidirectional n8n mapping | **Implemented** | Verified in `tests/autoflow.test.js` |
+| **Canvas & UX** | Canvas Undo / Redo & Multi-Select | `WorkflowCanvas` (`undoStack`, `redoStack`, `selectedNodeIds`, Shift+Drag marquee, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+D`) | **Implemented** | Verified in `public/js/canvas.js` |
+| **Webhooks** | Dual Webhook Architecture | Test URL (`/webhook-test/:path`) vs Production URL (`/webhook/:path`) with real-time test listener & cancellation | **Implemented** | 4/4 tests in `tests/webhook-test-mode.test.js` |
+| **Code Node** | Python 3 Language Execution | `CodeNode` with `language: 'python' | 'javaScript'`, `_items`, `_input`, `$json` | **Implemented** | 5/5 tests in `tests/code-python.test.js` |
+| **Credentials** | Credential Test Connection Validator | `POST /api/credentials/test` & `POST /api/credentials/:id/test` with HTTP probing & credential isolation | **Implemented** | 4/4 tests in `tests/credential-test-validator.test.js` |
+| **Versioning** | Workflow Version History & Rollback | `workflow_versions` table, auto-snapshotting on save, 50-version retention, diff calculation, 1-click restore | **Implemented** | Unit tests in `tests/n8n-full-parity-suite.test.js` |
+| **Organization**| Workflow Folders & Tagging System | `workflow_folders`, `workflow_tags`, `workflow_tag_mappings`, filter by folder and tags in dashboard | **Implemented** | Unit tests in `tests/n8n-full-parity-suite.test.js` |
+| **Expressions** | JMESPath & Advanced Expression Helpers | `$jmespath()`, `$now.plus()`, `$now.minus()`, `$now.format()`, `$today`, `$slug()`, `$hash()`, `$base64Encode()` | **Implemented** | Unit tests in `tests/n8n-full-parity-suite.test.js` |
+| **Maintenance** | Execution Log Pruning & Retention | `ExecutionRetentionManager`, daily automated 02:00 AM cron, `POST /api/executions/prune`, settings config | **Implemented** | Unit tests in `tests/n8n-full-parity-suite.test.js` |
+| **Ecosystem** | 405 Nodes Universal Registry | 41 Native Nodes + 364 Declarative Integrations + Dynamic SDK loader, 100% schema compliance | **Implemented** | 7/7 tests in `tests/node-catalog-audit.test.js` |
 | **Templates** | 1-Click Workflow Template Catalog | 8 production blueprints with auto-build | **Implemented** | `/api/templates` & modal UI |
 | **Observability** | Execution Traces & Debug Inspector | `executions` & `execution_nodes` | **Implemented** | Full node debug panel |
 | **Observability** | Real-Time Animated Flowchart Execution | SSE pulse streaming (`node_start`, `node_finish`) | **Implemented** | Fullscreen SVG flowchart runner |
 | **Portability** | Bidirectional n8n Import / Export | `WorkflowAdapter` | **Implemented** | Test 4 in `autoflow.test.js` |
 | **Deployment** | Multi-Stage Docker & Compose | `Dockerfile` & `docker-compose.yml` | **Implemented** | Production container build |
+

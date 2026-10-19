@@ -72,6 +72,7 @@ export class WorkflowGraph {
 
   findTriggerNodes(): WorkflowNode[] {
     return this.workflow.nodes.filter((node) => {
+      if (node.type === 'sticky-note') return false;
       const isTriggerType = node.type.includes('trigger') ||
         node.type === 'manual-trigger' ||
         node.type === 'webhook-trigger' ||

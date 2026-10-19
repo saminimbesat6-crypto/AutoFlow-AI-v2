@@ -109,9 +109,71 @@ class AutoFlowApp {
       }
     });
 
+    // Undo & Redo Canvas Buttons
+    document.getElementById('canvas-undo-btn')?.addEventListener('click', () => {
+      this.canvas.undo();
+    });
+    document.getElementById('canvas-redo-btn')?.addEventListener('click', () => {
+      this.canvas.redo();
+    });
+
     // Zoom to Fit Button
     document.getElementById('canvas-zoom-fit-btn')?.addEventListener('click', () => {
       this.canvas.zoomToFit();
+    });
+
+    // Add Sticky Note Button
+    document.getElementById('canvas-add-note-btn')?.addEventListener('click', () => {
+      if (!this.currentWorkflow) return;
+      this.canvas.pushSnapshot();
+      const rect = this.canvas.container.getBoundingClientRect();
+      const center = this.canvas.screenToCanvas(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      const newNote = {
+        id: 'note_' + Math.random().toString(36).substring(2, 9),
+        name: 'Sticky Note',
+        type: 'sticky-note',
+        position: { x: Math.round(center.x - 150), y: Math.round(center.y - 90) },
+        parameters: {
+          content: '## Workflow Section\nDouble click to edit instructions or notes...',
+          color: 'yellow',
+          width: 300,
+          height: 180
+        }
+      };
+      this.currentWorkflow.nodes.push(newNote);
+      this.canvas.render();
+      this.canvas.selectNode(newNote.id);
+      this.toast('Sticky note added to canvas', 'info');
+    });
+
+    // Version History Button & Drawer
+    document.getElementById('canvas-history-btn')?.addEventListener('click', () => {
+      this.openVersionHistory();
+    });
+    document.getElementById('close-history-btn')?.addEventListener('click', () => {
+      document.getElementById('version-history-drawer')?.classList.remove('open');
+    });
+
+    // Prune Executions Button
+    document.getElementById('prune-executions-btn')?.addEventListener('click', async () => {
+      if (confirm('Prune execution records older than 14 days?')) {
+        try {
+          const res = await this.api('/api/executions/prune', {
+            method: 'POST',
+            body: JSON.stringify({ maxAgeDays: 14 })
+          });
+          this.toast(res.message || 'Executions pruned', 'success');
+          this.loadExecutionsList();
+        } catch (err) {
+          this.toast(`Pruning failed: ${err.message}`, 'error');
+        }
+      }
+    });
+
+    // Folder Filter in Workflows Dashboard
+    document.getElementById('workflows-folder-filter')?.addEventListener('change', (e) => {
+      this.selectedFolderId = e.target.value;
+      this.loadWorkflowsList();
     });
 
     // Save Workflow Button
@@ -471,26 +533,142 @@ class AutoFlowApp {
     }
   }
 
+  // --- Version History Management (Capability 6) ---
+  async openVersionHistory() {
+    if (!this.currentWorkflow) return;
+    const historyDrawer = document.getElementById('version-history-drawer');
+    const listEl = document.getElementById('version-history-list');
+    if (!historyDrawer || !listEl) return;
+
+    listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">Loading version history...</div>';
+    historyDrawer.classList.add('open');
+
+    try {
+      const res = await this.api(`/api/workflows/${this.currentWorkflow.id}/versions`);
+      const versions = res.data || [];
+
+      if (versions.length === 0) {
+        listEl.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px;">No previous versions recorded.</div>';
+        return;
+      }
+
+      listEl.innerHTML = versions.map((v) => {
+        const dateStr = new Date(v.createdAt).toLocaleString();
+        return `
+          <div class="version-card">
+            <div class="version-card-header">
+              <span class="version-num-pill">Version ${v.versionNum}</span>
+              <span class="version-date">${dateStr}</span>
+            </div>
+            <div class="version-desc">${v.description || 'Workflow snapshot'}</div>
+            <div class="version-meta">
+              <span>⚡ ${v.nodeCount} nodes</span>
+              <span>🔗 ${v.connectionCount} connections</span>
+            </div>
+            <div class="version-card-actions">
+              <button class="btn btn-secondary btn-sm restore-version-btn" data-vid="${v.id}" data-vnum="${v.versionNum}">↺ Restore This Version</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      listEl.querySelectorAll('.restore-version-btn').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const vId = btn.dataset.vid;
+          const vNum = btn.dataset.vnum;
+          if (confirm(`Restore workflow to Version ${vNum}? Current canvas state will be saved as a new version first.`)) {
+            try {
+              btn.disabled = true;
+              btn.textContent = 'Restoring...';
+              const restoreRes = await this.api(`/api/workflows/${this.currentWorkflow.id}/versions/${vId}/restore`, { method: 'POST' });
+              this.currentWorkflow = restoreRes.data;
+              this.canvas.loadWorkflow(this.currentWorkflow);
+              document.getElementById('workflow-title-input').value = this.currentWorkflow.name;
+              this.updateActiveToggleUI();
+              this.toast(`Workflow successfully restored to Version ${vNum}!`, 'success');
+              this.openVersionHistory();
+            } catch (err) {
+              this.toast(`Restore failed: ${err.message}`, 'error');
+              btn.disabled = false;
+              btn.textContent = '↺ Restore This Version';
+            }
+          }
+        });
+      });
+    } catch (err) {
+      listEl.innerHTML = `<div style="color: #ef4444; padding: 20px;">Failed to load versions: ${err.message}</div>`;
+    }
+  }
+
   // --- Dashboard Views ---
   async loadWorkflowsList() {
     const tbody = document.getElementById('workflows-table-body');
     if (!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align: center;">Loading...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">Loading...</td></tr>';
 
     try {
-      const res = await this.api('/api/workflows');
+      // 1. Fetch tags and folders
+      const [foldersRes, tagsRes] = await Promise.all([
+        this.api('/api/folders').catch(() => ({ data: [] })),
+        this.api('/api/tags').catch(() => ({ data: [] }))
+      ]);
+
+      const folders = foldersRes.data || [];
+      const tags = tagsRes.data || [];
+      const tagsMap = new Map(tags.map((t) => [t.id, t]));
+      const foldersMap = new Map(folders.map((f) => [f.id, f.name]));
+
+      // Populate folders select
+      const folderSelect = document.getElementById('workflows-folder-filter');
+      if (folderSelect) {
+        folderSelect.innerHTML = '<option value="">📁 All Folders</option>' + folders.map((f) =>
+          `<option value="${f.id}" ${this.selectedFolderId === f.id ? 'selected' : ''}>📁 ${f.name}</option>`
+        ).join('');
+      }
+
+      // Populate tags bar
+      const tagsBar = document.getElementById('workflows-tags-bar');
+      if (tagsBar) {
+        tagsBar.innerHTML = `<span class="tag-filter-chip ${!this.selectedTagId ? 'active' : ''}" data-tid="">All Tags</span>` +
+          tags.map((t) => `<span class="tag-filter-chip ${this.selectedTagId === t.id ? 'active' : ''}" data-tid="${t.id}" style="border-left: 3px solid ${t.color}">🏷️ ${t.name}</span>`).join('');
+
+        tagsBar.querySelectorAll('.tag-filter-chip').forEach((chip) => {
+          chip.addEventListener('click', () => {
+            this.selectedTagId = chip.dataset.tid || null;
+            this.loadWorkflowsList();
+          });
+        });
+      }
+
+      // 2. Fetch filtered workflows
+      const queryParams = [];
+      if (this.selectedFolderId) queryParams.push(`folderId=${encodeURIComponent(this.selectedFolderId)}`);
+      if (this.selectedTagId) queryParams.push(`tag=${encodeURIComponent(this.selectedTagId)}`);
+      const url = '/api/workflows' + (queryParams.length > 0 ? `?${queryParams.join('&')}` : '');
+
+      const res = await this.api(url);
       const workflows = res.data || [];
       tbody.innerHTML = '';
 
       if (workflows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No workflows found. Click "New Workflow" to create one.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b;">No workflows found. Click "New Workflow" to create one.</td></tr>';
         return;
       }
 
       for (const wf of workflows) {
         const tr = document.createElement('tr');
+        const folderName = wf.folderId && foldersMap.has(wf.folderId) ? `📁 ${foldersMap.get(wf.folderId)}` : '';
+        const tagPills = (wf.tags || []).map((tid) => {
+          const t = tagsMap.get(tid);
+          return t ? `<span class="workflow-tag-pill" style="background: ${t.color};">${t.name}</span>` : '';
+        }).filter(Boolean).join(' ');
+
         tr.innerHTML = `
           <td><strong>${wf.name}</strong></td>
+          <td>
+            ${folderName ? `<span style="font-size: 0.78rem; color: #94a3b8; display: block; margin-bottom: 2px;">${folderName}</span>` : ''}
+            <div>${tagPills || '<span style="color: #64748b; font-size: 0.75rem;">—</span>'}</div>
+          </td>
           <td><span class="badge ${wf.active ? 'badge-active' : 'badge-inactive'}">${wf.active ? 'Active' : 'Inactive'}</span></td>
           <td>${wf.nodes?.length || 0} nodes</td>
           <td>${new Date(wf.updatedAt).toLocaleString()}</td>
@@ -510,7 +688,9 @@ class AutoFlowApp {
 
         tbody.appendChild(tr);
       }
-    } catch (err) {}
+    } catch (err) {
+      console.error('loadWorkflowsList error:', err);
+    }
   }
 
   async loadExecutionsList() {

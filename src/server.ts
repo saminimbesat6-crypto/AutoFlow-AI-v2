@@ -21,6 +21,10 @@ import { createAiAssistantRouter } from './api/routes/ai-assistant-routes';
 import { createTemplateRoutes } from './api/routes/template-routes';
 import { ExecutionQueueManager } from './scaling/queue-manager';
 import { createQueueRouter } from './api/routes/queue-routes';
+import { TagRepository } from './database/repositories/tag-repository';
+import { FolderRepository } from './database/repositories/folder-repository';
+import { createTagRouter } from './api/routes/tag-routes';
+import { createFolderRouter } from './api/routes/folder-routes';
 
 export function createApp() {
   const app = express();
@@ -35,6 +39,8 @@ export function createApp() {
   runMigrations(db);
 
   const workflowRepo = new WorkflowRepository(db);
+  const tagRepo = new TagRepository(db);
+  const folderRepo = new FolderRepository(db);
   const executor = new WorkflowExecutor(db);
   const webhookManager = new WebhookManager(db);
   const schedulerManager = new SchedulerManager(db);
@@ -60,6 +66,8 @@ export function createApp() {
   app.use('/api/workflows', createWorkflowRouter(workflowRepo, executor, webhookManager, schedulerManager));
   app.use('/api/executions', createExecutionRouter(db, executor));
   app.use('/api/credentials', createCredentialRouter(credentialsManager));
+  app.use('/api/tags', createTagRouter(tagRepo));
+  app.use('/api/folders', createFolderRouter(folderRepo));
   app.use('/api/node-types', createNodeTypeRouter());
   app.use('/api/ai/assistant', createAiAssistantRouter(credentialsManager));
   app.use('/api/templates', createTemplateRoutes(workflowRepo));
@@ -69,6 +77,19 @@ export function createApp() {
   app.all('/webhook/:path(*)', async (req: Request, res: Response) => {
     const webhookPath = String(req.params.path || '');
     const result = await webhookManager.handleWebhook(webhookPath, req.method, {
+      body: req.body,
+      headers: req.headers,
+      query: req.query,
+      params: req.params
+    });
+
+    res.status(result.statusCode).json(result);
+  });
+
+  // Test Webhook Receiver Endpoint (n8n parity /webhook-test/:path)
+  app.all('/webhook-test/:path(*)', async (req: Request, res: Response) => {
+    const webhookPath = String(req.params.path || '');
+    const result = await webhookManager.handleTestWebhook(webhookPath, req.method, {
       body: req.body,
       headers: req.headers,
       query: req.query,

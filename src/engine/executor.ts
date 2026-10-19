@@ -135,7 +135,7 @@ export class WorkflowExecutor {
 
       const nodeId = executionQueue.shift()!;
       const node = graph.getNode(nodeId);
-      if (!node || node.disabled) continue;
+      if (!node || node.disabled || node.type === 'sticky-note') continue;
 
       // Check max run count to prevent runaway infinite cycles
       const runCount = (nodeRunCounts.get(node.id) || 0) + 1;
