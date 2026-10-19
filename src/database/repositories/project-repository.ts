@@ -333,4 +333,36 @@ export class ProjectRepository {
       updatedAt: row.updated_at
     }));
   }
+
+  getOverviewMetrics(): {
+    totalProjects: number;
+    totalWorkflows: number;
+    activeWorkflows: number;
+    overallHealthRate: number;
+  } {
+    const totalProjectsRow = this.db.prepare('SELECT COUNT(*) as count FROM projects WHERE archived = 0').get() as any;
+    const totalProjects = Number(totalProjectsRow?.count || 0);
+
+    const totalWorkflowsRow = this.db.prepare('SELECT COUNT(*) as count FROM workflows').get() as any;
+    const totalWorkflows = Number(totalWorkflowsRow?.count || 0);
+
+    const activeWorkflowsRow = this.db.prepare('SELECT COUNT(*) as count FROM workflows WHERE active = 1').get() as any;
+    const activeWorkflows = Number(activeWorkflowsRow?.count || 0);
+
+    const healthStmt = this.db.prepare("SELECT status FROM executions WHERE status IN ('success', 'error')");
+    const execRows = healthStmt.all() as any[];
+
+    let overallHealthRate = 100;
+    if (execRows.length > 0) {
+      const successfulRuns = execRows.filter((r) => r.status === 'success').length;
+      overallHealthRate = Math.round((successfulRuns / execRows.length) * 100);
+    }
+
+    return {
+      totalProjects,
+      totalWorkflows,
+      activeWorkflows,
+      overallHealthRate
+    };
+  }
 }

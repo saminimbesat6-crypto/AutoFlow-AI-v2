@@ -47,6 +47,16 @@ export function createProjectRouter(
     }
   });
 
+  // Get overview metrics across projects
+  router.get('/metrics/overview', (_req: Request, res: Response) => {
+    try {
+      const metrics = projectRepo.getOverviewMetrics();
+      res.json({ success: true, data: metrics });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // Create new project
   router.post('/', (req: Request, res: Response) => {
     try {

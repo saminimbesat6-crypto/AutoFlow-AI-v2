@@ -1,7 +1,7 @@
 class WorkflowEditor {
   constructor(canvas, apiClient) {
     this.canvas = canvas;
-    this.api = apiClient;
+    this.api = apiClient && typeof apiClient.api === 'function' ? apiClient.api.bind(apiClient) : apiClient;
 
     this.paletteEl = document.getElementById('palette-categories');
     this.paletteSearchInput = document.getElementById('palette-search');
@@ -374,9 +374,8 @@ class WorkflowEditor {
         statusDiv.textContent = 'Send an HTTP request to the Test URL above within 120 seconds.';
 
         try {
-          const res = await fetch(`/api/workflows/${this.canvas.workflow.id}/webhook-test/listen`, {
+          const data = await this.api(`/api/workflows/${this.canvas.workflow.id}/webhook-test/listen`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               nodeId: node.id,
               path: currentPath,
@@ -384,7 +383,6 @@ class WorkflowEditor {
               timeoutMs: 120000
             })
           });
-          const data = await res.json();
           if (data.success && data.event) {
             statusDiv.style.color = '#4ade80';
             statusDiv.textContent = '✅ Event received successfully from ' + data.event.method + '!';

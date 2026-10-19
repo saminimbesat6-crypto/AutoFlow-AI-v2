@@ -172,16 +172,24 @@ export function createApp() {
 
   // SPA fallback
   app.get('*', (req: Request, res: Response, next: NextFunction) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/webhook')) {
+    if (req.path.startsWith('/api') || req.path.startsWith('/webhook') || req.path.startsWith('/webhook-test')) {
       return next();
     }
     res.sendFile(path.join(publicDir, 'index.html'));
   });
 
+  // 404 JSON Catch-All for API and Webhook endpoints (prevent returning HTML error pages)
+  app.use(['/api', '/api/*', '/webhook', '/webhook/*', '/webhook-test', '/webhook-test/*'], (req: Request, res: Response) => {
+    res.status(404).json({
+      success: false,
+      error: `API endpoint not found: ${req.method} ${req.originalUrl}`
+    });
+  });
+
   // Error handling middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     console.error('[Server Error]', err);
-    res.status(500).json({
+    res.status(err.status || 500).json({
       success: false,
       error: err.message || 'Internal Server Error'
     });

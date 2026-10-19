@@ -34,19 +34,40 @@ class AutoFlowApp {
 
   // --- API Client Helpers ---
   async api(endpoint, options = {}) {
+    const { silent = false, ...fetchOptions } = options;
     try {
       const res = await fetch(endpoint, {
-        headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
-        ...options
+        headers: { 'Content-Type': 'application/json', ...(fetchOptions.headers || {}) },
+        ...fetchOptions
       });
-      const data = await res.json();
+
+      const contentType = res.headers.get('content-type') || '';
+      let data = null;
+
+      if (contentType.includes('application/json')) {
+        try {
+          data = await res.json();
+        } catch (jsonErr) {
+          throw new Error(`Invalid JSON received from ${endpoint} (HTTP ${res.status})`);
+        }
+      } else {
+        const rawText = await res.text().catch(() => '');
+        const isHtml = rawText.trim().startsWith('<') || contentType.includes('text/html');
+        if (isHtml) {
+          throw new Error(`Unexpected HTML response from server (HTTP ${res.status}). Expected JSON.`);
+        }
+        throw new Error(rawText.slice(0, 120) || `Unexpected response format (HTTP ${res.status})`);
+      }
+
       if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+        throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
       }
       return data;
     } catch (err) {
       console.error(`API Error on ${endpoint}:`, err);
-      this.toast(`Error: ${err.message}`, 'error');
+      if (!silent) {
+        this.toast(`Error: ${err.message}`, 'error');
+      }
       throw err;
     }
   }
@@ -738,7 +759,7 @@ class AutoFlowApp {
       const isArchived = this.projectFilter === 'archived';
       const [projectsRes, metricsRes] = await Promise.all([
         this.api(`/api/projects?archived=${isArchived}`),
-        this.api('/api/projects/metrics/overview').catch(() => null)
+        this.api('/api/projects/metrics/overview', { silent: true }).catch(() => null)
       ]);
 
       this.projectsList = projectsRes.data || [];
