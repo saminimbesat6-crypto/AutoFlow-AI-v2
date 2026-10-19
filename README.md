@@ -30,21 +30,27 @@
 - **Multi-Modal Gemini Vision & Document Analysis**:
   - Integrated `GeminiNode` supporting `gemini-3.8-flash` and `gemini-3.8-pro`.
   - Native multi-modal vision inputs: pass base64 image strings, data URLs, or remote image/PDF links to extract receipts, analyze documents, or read diagrams.
-- **Omnichannel App & Social Connectors (n8n Parity)**:
-  - **WhatsApp Business Node**: Send text messages, media files (images, audio, PDFs), and pre-approved business templates via Meta WhatsApp Cloud API.
-  - **Instagram for Business Node**: Automated Instagram Direct Messages (DMs), post/reel comment auto-replies, and photo publishing.
-  - **Telegram Node**: Send markdown messages, alerts, and notifications to Telegram chats and channels.
-  - **Discord Node**: Send webhook messages and rich embed cards with customizable colors and metadata.
-  - **Slack Node**: Send channel messages and Block Kit rich cards via Slack incoming webhooks.
-  - **Email / SMTP Node**: Transactional emails, HTML digests, and alert dispatches with sandbox simulation and custom SMTP support.
-  - **Inbound Email Trigger**: Automated trigger parsing incoming emails (sender, subject, body, and attachments).
-  - **Google Sheets Node**: Append rows, read ranges, and update spreadsheets directly in Google Sheets.
-  - **Airtable Node**: Create, search, and update records in Airtable bases.
-  - **GitHub Node**: Automate issue creation, pull request comments, and repository event dispatching.
-  - **Stripe Node**: Automate customer creation, hosted payment checkout links, and subscription billing.
+- **Universal 405-Node Integration Catalog (Full n8n Parity)**:
+  - **41 Native Core Nodes**: HTTP Request, If-Condition, Switch, Loop Over Items, Merge (Join, Append, Cartesian), Code (JS & Python), Aggregate, Date & Time, Crypto (HMAC, SHA, AES), Wait/Delay, Sticky Notes, File Read/Write, and Sub-Workflow execution.
+  - **364 Declarative Integrations**: Pre-mapped REST & webhook connectors across AWS S3, Postgres, Redis, Stripe, Airtable, Notion, GitHub, WhatsApp, Instagram, Telegram, Discord, Slack, Google Sheets, and hundreds more.
+  - **Dynamic Custom Node SDK**: Drop new node manifests into `./custom-nodes` for instant runtime compilation and auto-registration.
+- **Dual Webhook Architecture (n8n Parity)**:
+  - **Production Webhooks** (`/webhook/:path`): Robust ingress for active production workflows.
+  - **Test Webhooks** (`/webhook-test/:path`): Real-time event capture with push-notification streaming into the visual canvas editor.
+- **Multi-Language Code Node (JavaScript & Python 3)**:
+  - Execute custom transformations in isolated sandboxes using either JavaScript or native Python 3 with direct access to `$json`, `_items`, and helper libraries.
+- **Enterprise Workflow Governance**:
+  - **Version History & 1-Click Rollback**: Automatic version snapshotting on every save with JSON diff calculation and instant historical restoration.
+  - **Folders & Tagging Organization**: Organize workflows into hierarchical folders and multi-tag categorizations with instant dashboard filtering.
+  - **Execution Log Retention & Pruning**: Automated background maintenance and manual log pruning to prevent database bloat.
+- **Advanced Expressions & Sandboxing**:
+  - Full support for `{{ $json.key }}`, upstream node references (`$('Node').item`), built-in **JMESPath** queries (`$jmespath()`), and advanced date-time math (`$now.plus()`, `$now.format()`).
+- **Production Worker Scaling & Priority Queues**:
+  - Concurrency throttling, priority execution tiers (*urgent*, *high*, *normal*, *low*), and standalone worker process (`src/worker.ts`).
 - **Bidirectional n8n Compatibility Adapter**: Export and import workflows seamlessly between AutoFlow AI and standard n8n JSON formats.
-- **Embedded Database Architecture**: Powered by Node 24's native `node:sqlite` (`DatabaseSync`), requiring zero external database setup and zero native compiler toolchains.
-- **Enterprise-Grade Security**: Credentials encrypted at rest using **AES-256-GCM** with unique initialization vectors (IV) and authentication tags.
+- **Embedded Database Architecture**: Powered by Node 24's native `node:sqlite` (`DatabaseSync`), requiring zero external database setup, zero Redis, and zero native compiler toolchains.
+- **Enterprise-Grade Security**: Credentials encrypted at rest using **AES-256-GCM** with unique initialization vectors (IV), authentication tags, and automated OAuth2 token refresh.
+- **Mobile-First Visual Studio**: Full touch gesture support, pinch-to-zoom, pan, responsive toolbar, and drag-to-connect engineered directly for mobile and desktop screens.
 
 ---
 
@@ -122,7 +128,7 @@ GEMINI_API_KEY=AIzaSy...
 ```bash
 npm test
 ```
-All 17 automated tests verify engine execution, DAG resolution, AES-256-GCM encryption, app dispatches, and SSE streaming.
+All 102 automated tests across 16 test suites verify engine execution, DAG resolution, 405-node catalog integrity, AES-256-GCM encryption, OAuth2 tokens, Python 3 execution, dual webhooks, and SSE streaming.
 
 ### 5. Start Application
 ```bash
